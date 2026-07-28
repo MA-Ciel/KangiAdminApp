@@ -14,15 +14,20 @@
         width: 100%;
         height: 100%;
         overflow: hidden;
-        background: #111;
+        background: #0f172a;
         font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+        display: flex;
+        align-items: center;
+        justify-content: center;
       }
       #unity-container {
-        width: 100%;
-        height: 100%;
-        position: absolute;
-        top: 0;
-        left: 0;
+        position: relative;
+        background: #000;
+        box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.7);
+        overflow: hidden;
+        display: flex;
+        align-items: center;
+        justify-content: center;
       }
       #unity-canvas {
         width: 100%;
@@ -40,6 +45,7 @@
         align-items: center;
         justify-content: center;
         color: #ffffff;
+        z-index: 10;
       }
       .spinner {
         border: 4px solid rgba(255, 255, 255, 0.1);
@@ -55,7 +61,7 @@
         100% { transform: rotate(360deg); }
       }
       #unity-progress-bar-empty {
-        width: 200px;
+        width: 180px;
         height: 8px;
         background: rgba(255, 255, 255, 0.2);
         border-radius: 4px;
@@ -109,6 +115,39 @@
       var progressBarFull = document.querySelector("#unity-progress-bar-full");
       var warningBanner = document.querySelector("#unity-warning");
 
+      // Portrait Aspect Ratio (e.g. 9:16)
+      var targetAspect = 9 / 16;
+
+      function resizeContainer() {
+        var windowWidth = window.innerWidth;
+        var windowHeight = window.innerHeight;
+        var windowAspect = windowWidth / windowHeight;
+
+        var width, height;
+
+        if (windowAspect > targetAspect) {
+          // Screen is wider than portrait aspect ratio (Desktop / Landscape)
+          height = windowHeight;
+          width = height * targetAspect;
+        } else {
+          // Screen is narrower (Mobile Portrait)
+          width = windowWidth;
+          height = width / targetAspect;
+          if (height > windowHeight) {
+            height = windowHeight;
+            width = height * targetAspect;
+          }
+        }
+
+        container.style.width = Math.floor(width) + "px";
+        container.style.height = Math.floor(height) + "px";
+        canvas.style.width = "100%";
+        canvas.style.height = "100%";
+      }
+
+      window.addEventListener('resize', resizeContainer);
+      resizeContainer();
+
       function unityShowBanner(msg, type) {
         function updateBannerState() {
           warningBanner.style.display = warningBanner.children.length ? 'block' : 'none';
@@ -146,14 +185,6 @@
         meta.content = 'width=device-width, height=device-height, initial-scale=1.0, user-scalable=no, shrink-to-fit=yes';
         document.getElementsByTagName('head')[0].appendChild(meta);
       }
-
-      function resizeCanvas() {
-        canvas.style.width = "100%";
-        canvas.style.height = "100%";
-      }
-
-      window.addEventListener('resize', resizeCanvas);
-      resizeCanvas();
 
       loadingBar.style.display = "flex";
 

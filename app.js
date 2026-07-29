@@ -818,6 +818,8 @@
       if (!KangiService.session.isLoggedIn()) return;
       el.refreshBtn.style.animation = 'spin 0.65s linear';
       await _loadAllData();
+      await _loadSongsData();
+      setTimeout(() => el.refreshBtn.style.animation = '', 700);
       setTimeout(() => el.refreshBtn.style.animation = '', 700);
     });
   }

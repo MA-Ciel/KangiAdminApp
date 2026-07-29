@@ -30,7 +30,8 @@
     iconMoon:       $('iconMoon'),
     iconSun:        $('iconSun'),
     refreshBtn:     $('refreshBtn'),
-    menuToggleBtn: $('menuToggleBtn'),
+    menuToggleBtn:  $('menuToggleBtn'),
+    sidebarOverlay: $('sidebarOverlay'),
 
     /* Dashboard */
     statNfts:       $('statNfts'),
@@ -184,13 +185,32 @@
   // MENU TOGGLE – mobile sidebar open/close
   // ------------------------------------------------
   function _bindMenuToggle() {
-    el.menuToggleBtn.addEventListener('click', () => {
-      const sidebar = document.getElementById('sidebar');
-      sidebar.classList.toggle('open');
-      // Update aria-expanded for accessibility
-      const expanded = el.menuToggleBtn.getAttribute('aria-expanded') === 'true';
-      el.menuToggleBtn.setAttribute('aria-expanded', !expanded);
-    });
+    const sidebar = $('sidebar');
+    const overlay = el.sidebarOverlay || $('sidebarOverlay');
+
+    function toggleMenu(e) {
+      if (e) e.stopPropagation();
+      const isOpen = sidebar ? sidebar.classList.toggle('open') : false;
+      if (overlay) overlay.classList.toggle('open', isOpen);
+      if (el.menuToggleBtn) {
+        el.menuToggleBtn.setAttribute('aria-expanded', isOpen ? 'true' : 'false');
+      }
+    }
+
+    function closeMenu() {
+      if (sidebar) sidebar.classList.remove('open');
+      if (overlay) overlay.classList.remove('open');
+      if (el.menuToggleBtn) {
+        el.menuToggleBtn.setAttribute('aria-expanded', 'false');
+      }
+    }
+
+    if (el.menuToggleBtn) {
+      el.menuToggleBtn.addEventListener('click', toggleMenu);
+    }
+    if (overlay) {
+      overlay.addEventListener('click', closeMenu);
+    }
   }
 
   async function _switchView(name) {
@@ -199,6 +219,13 @@
       v.classList.remove('hidden');
     });
     document.querySelectorAll('.nav-item').forEach(b => b.classList.remove('active'));
+
+    /* Close mobile menu when view changes */
+    const sidebar = $('sidebar');
+    const overlay = el.sidebarOverlay || $('sidebarOverlay');
+    if (sidebar) sidebar.classList.remove('open');
+    if (overlay) overlay.classList.remove('open');
+    if (el.menuToggleBtn) el.menuToggleBtn.setAttribute('aria-expanded', 'false');
 
     const view = $(`${name}View`);
     if (view) {
@@ -835,7 +862,6 @@
       await _loadAllData();
       await _loadSongsData();
       setTimeout(() => el.refreshBtn.style.animation = '', 700);
-      setTimeout(() => el.refreshBtn.style.animation = '', 700);
     });
   }
 
@@ -899,6 +925,10 @@
   }
 
   /* ── Start ── */
-  document.addEventListener('DOMContentLoaded', boot);
+  if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', boot);
+  } else {
+    boot();
+  }
 
 })();

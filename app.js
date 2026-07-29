@@ -83,7 +83,12 @@
     adminTargetEmail:   $('adminTargetEmail'),
     makeAdminBtn:       $('makeAdminBtn'),
     userMgmtAlert:      $('userMgmtAlert'),
-    makeAdminResult:    $('makeAdminResult')
+    makeAdminResult:    $('makeAdminResult'),
+    revokeAdminForm:    $('revokeAdminForm'),
+    revokeTargetEmail:  $('revokeTargetEmail'),
+    revokeAdminBtn:     $('revokeAdminBtn'),
+    revokeAdminAlert:   $('revokeAdminAlert'),
+    revokeAdminResult:  $('revokeAdminResult')
   };
 
   /* ─── App state ─── */
@@ -979,6 +984,7 @@
   function _bindUserManagement() {
     if (!el.makeAdminForm) return;
 
+    /* ── Grant Admin ── */
     el.makeAdminForm.addEventListener('submit', async (e) => {
       e.preventDefault();
       const email = el.adminTargetEmail.value.trim();
@@ -987,7 +993,6 @@
         return _alert(el.userMgmtAlert, 'error', 'Please enter an email address.');
       }
 
-      /* Hide previous result */
       el.makeAdminResult.classList.add('hidden');
       _setLoading(el.makeAdminBtn, true);
       _alert(el.userMgmtAlert, 'info', 'Looking up account and granting admin access…');
@@ -1016,8 +1021,6 @@
               The user can now sign in to the admin dashboard with their existing credentials.
             </div>`;
           el.makeAdminResult.classList.remove('hidden');
-
-          /* Reset form */
           el.makeAdminForm.reset();
         } else {
           _alert(el.userMgmtAlert, 'error', (res && res.error) || 'Failed to grant admin access.');
@@ -1026,6 +1029,56 @@
         _alert(el.userMgmtAlert, 'error', typeof err === 'string' ? err : (err.message || 'An error occurred.'));
       } finally {
         _setLoading(el.makeAdminBtn, false);
+      }
+    });
+
+    /* ── Revoke Admin ── */
+    if (!el.revokeAdminForm) return;
+
+    el.revokeAdminForm.addEventListener('submit', async (e) => {
+      e.preventDefault();
+      const email = el.revokeTargetEmail.value.trim();
+
+      if (!email) {
+        return _alert(el.revokeAdminAlert, 'error', 'Please enter an email address.');
+      }
+
+      if (!confirm(`Remove admin privileges from "${email}"?\n\nThey will no longer be able to log in to the dashboard.`)) return;
+
+      el.revokeAdminResult.classList.add('hidden');
+      _setLoading(el.revokeAdminBtn, true);
+      _alert(el.revokeAdminAlert, 'info', 'Looking up account and revoking admin access…');
+
+      try {
+        const res = await KangiService.revokeAdmin(email);
+
+        if (res && res.success) {
+          _hideEl(el.revokeAdminAlert);
+
+          el.revokeAdminResult.innerHTML = `
+            <div style="display:flex;align-items:center;gap:0.6rem;margin-bottom:0.65rem;">
+              <svg viewBox="0 0 20 20" fill="currentColor" style="width:18px;height:18px;color:#f43f5e;flex-shrink:0;">
+                <path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zM8.707 7.293a1 1 0 00-1.414 1.414L8.586 10l-1.293 1.293a1 1 0 101.414 1.414L10 11.414l1.293 1.293a1 1 0 001.414-1.414L11.414 10l1.293-1.293a1 1 0 00-1.414-1.414L10 8.586 8.707 7.293z" clip-rule="evenodd"/>
+              </svg>
+              <strong style="font-size:0.9rem;color:#fff;">Admin access revoked successfully</strong>
+            </div>
+            <div style="font-size:0.8rem;color:#fecaca;line-height:1.7;">
+              <strong style="color:#fff;">Email:</strong> ${_esc(res.email || email)}<br/>
+              <strong style="color:#fff;">PlayFab ID:</strong> ${_esc(res.playFabId || '—')}<br/>
+              <strong style="color:#fff;">Status:</strong> <span style="color:#f43f5e;">● IsAdmin = false</span>
+            </div>
+            <div style="font-size:0.75rem;color:#fca5a5;margin-top:0.65rem;padding-top:0.65rem;border-top:1px solid rgba(244,63,94,0.2);">
+              This user's dashboard access has been removed. They will be denied on their next login attempt.
+            </div>`;
+          el.revokeAdminResult.classList.remove('hidden');
+          el.revokeAdminForm.reset();
+        } else {
+          _alert(el.revokeAdminAlert, 'error', (res && res.error) || 'Failed to revoke admin access.');
+        }
+      } catch (err) {
+        _alert(el.revokeAdminAlert, 'error', typeof err === 'string' ? err : (err.message || 'An error occurred.'));
+      } finally {
+        _setLoading(el.revokeAdminBtn, false);
       }
     });
   }

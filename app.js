@@ -33,6 +33,14 @@
     menuToggleBtn:  $('menuToggleBtn'),
     sidebarOverlay: $('sidebarOverlay'),
 
+    /* Settings */
+    settingsView:        $('settingsView'),
+    settingsUser:        $('settingsUser'),
+    settingsEmail:       $('settingsEmail'),
+    settingsAvatar:      $('settingsAvatar'),
+    settingsThemeToggle: $('settingsThemeToggle'),
+    settingsRefreshBtn:  $('settingsRefreshBtn'),
+
     /* Dashboard */
     statNfts:       $('statNfts'),
     statCodes:      $('statCodes'),
@@ -80,7 +88,8 @@
     create:    { title: 'Create NFT', sub: 'Upload an NFT image and generate unique QR codes' },
     manage:    { title: 'Manage QRs', sub: 'Browse all NFT batches, download QRs and copy redeem links' },
     sounds:    { title: 'Sounds Library', sub: 'Approve or delete audio files submitted to the server' },
-    redeem:    { title: 'Redeem',     sub: 'Verify and process a one-time QR code redemption' }
+    redeem:    { title: 'Redeem',     sub: 'Verify and process a one-time QR code redemption' },
+    settings:  { title: 'Settings & Account', sub: 'Manage administrator profile, application settings, and account session' }
   };
 
   /* ================================================================
@@ -100,6 +109,7 @@
     _bindRefresh();
     _bindMenuToggle();
     _bindTheme();
+    _bindSettings();
   }
 
   /* ================================================================
@@ -144,6 +154,10 @@
     el.sidebarUser.textContent = name;
     if (el.userAvatar) el.userAvatar.textContent = name.charAt(0).toUpperCase();
 
+    if (el.settingsUser) el.settingsUser.textContent = name;
+    if (el.settingsEmail) el.settingsEmail.textContent = res.email || 'admin@kangi.app';
+    if (el.settingsAvatar) el.settingsAvatar.textContent = name.charAt(0).toUpperCase();
+
     el.loginView.classList.add('hidden');
     el.appView.classList.remove('hidden');
 
@@ -156,16 +170,42 @@
      LOGOUT
      ================================================================ */
   function _bindLogout() {
-    el.logoutBtn.addEventListener('click', () => {
-      KangiService.logout();
-      state.nfts    = [];
-      el.appView.classList.add('hidden');
-      el.loginView.classList.remove('hidden');
-      el.loginEmail.value = '';
-      el.loginPass.value  = '';
-      _hideEl(el.loginAlert);
-      location.hash = '';
+    document.querySelectorAll('#logoutBtn').forEach(btn => {
+      btn.addEventListener('click', () => {
+        if (!confirm('Are you sure you want to sign out of your admin session?')) return;
+        KangiService.logout();
+        state.nfts  = [];
+        state.songs = [];
+        el.appView.classList.add('hidden');
+        el.loginView.classList.remove('hidden');
+        el.loginEmail.value = '';
+        el.loginPass.value  = '';
+        _hideEl(el.loginAlert);
+        location.hash = '';
+      });
     });
+  }
+
+  /* ================================================================
+     SETTINGS
+     ================================================================ */
+  function _bindSettings() {
+    if (el.settingsThemeToggle) {
+      el.settingsThemeToggle.addEventListener('click', () => {
+        const cur = document.documentElement.getAttribute('data-theme') || 'dark';
+        _applyTheme(cur === 'dark' ? 'light' : 'dark');
+      });
+    }
+    if (el.settingsRefreshBtn) {
+      el.settingsRefreshBtn.addEventListener('click', async () => {
+        el.settingsRefreshBtn.disabled = true;
+        el.settingsRefreshBtn.textContent = 'Syncing...';
+        await _loadAllData();
+        await _loadSongsData();
+        el.settingsRefreshBtn.disabled = false;
+        el.settingsRefreshBtn.textContent = 'Refresh Data';
+      });
+    }
   }
 
   /* ================================================================

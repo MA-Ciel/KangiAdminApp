@@ -30,6 +30,7 @@
     iconMoon:       $('iconMoon'),
     iconSun:        $('iconSun'),
     refreshBtn:     $('refreshBtn'),
+    menuToggleBtn: $('menuToggleBtn'),
 
     /* Dashboard */
     statNfts:       $('statNfts'),
@@ -96,6 +97,7 @@
     _bindRedeem();
     _bindClearAll();
     _bindRefresh();
+    _bindMenuToggle();
     _bindTheme();
   }
 
@@ -176,6 +178,19 @@
     document.querySelectorAll('[data-nav]').forEach(btn =>
       btn.addEventListener('click', () => _switchView(btn.dataset.nav))
     );
+  }
+
+  // ------------------------------------------------
+  // MENU TOGGLE – mobile sidebar open/close
+  // ------------------------------------------------
+  function _bindMenuToggle() {
+    el.menuToggleBtn.addEventListener('click', () => {
+      const sidebar = document.getElementById('sidebar');
+      sidebar.classList.toggle('open');
+      // Update aria-expanded for accessibility
+      const expanded = el.menuToggleBtn.getAttribute('aria-expanded') === 'true';
+      el.menuToggleBtn.setAttribute('aria-expanded', !expanded);
+    });
   }
 
   async function _switchView(name) {

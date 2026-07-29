@@ -1,205 +1,294 @@
 <!DOCTYPE html>
-<html lang="en-us">
-  <head>
-    <meta charset="utf-8">
-    <meta http-equiv="Content-Type" content="text/html; charset=utf-8">
-    <title>KangiAdminApp</title>
-    <style>
-      * {
-        margin: 0;
-        padding: 0;
-        box-sizing: border-box;
-      }
-      html, body {
-        width: 100%;
-        height: 100%;
-        overflow: hidden;
-        background: #0f172a;
-        font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
-        display: flex;
-        align-items: center;
-        justify-content: center;
-      }
-      #unity-container {
-        position: relative;
-        background: #000;
-        box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.7);
-        overflow: hidden;
-        display: flex;
-        align-items: center;
-        justify-content: center;
-      }
-      #unity-canvas {
-        width: 100%;
-        height: 100%;
-        background: #000;
-        display: block;
-      }
-      #unity-loading-bar {
-        position: absolute;
-        left: 50%;
-        top: 50%;
-        transform: translate(-50%, -50%);
-        display: flex;
-        flex-direction: column;
-        align-items: center;
-        justify-content: center;
-        color: #ffffff;
-        z-index: 10;
-      }
-      .spinner {
-        border: 4px solid rgba(255, 255, 255, 0.1);
-        width: 48px;
-        height: 48px;
-        border-radius: 50%;
-        border-left-color: #3b82f6;
-        animation: spin 1s linear infinite;
-        margin-bottom: 16px;
-      }
-      @keyframes spin {
-        0% { transform: rotate(0deg); }
-        100% { transform: rotate(360deg); }
-      }
-      #unity-progress-bar-empty {
-        width: 180px;
-        height: 8px;
-        background: rgba(255, 255, 255, 0.2);
-        border-radius: 4px;
-        overflow: hidden;
-        margin-top: 12px;
-      }
-      #unity-progress-bar-full {
-        width: 0%;
-        height: 100%;
-        background: linear-gradient(90deg, #3b82f6, #60a5fa);
-        border-radius: 4px;
-        transition: width 0.2s ease;
-      }
-      #loading-text {
-        font-size: 14px;
-        letter-spacing: 0.5px;
-        color: #9ca3af;
-      }
-      #unity-warning {
-        position: absolute;
-        left: 50%;
-        top: 10px;
-        transform: translate(-50%);
-        background: #ef4444;
-        color: #fff;
-        padding: 10px 16px;
-        border-radius: 6px;
-        display: none;
-        z-index: 999;
-        font-size: 14px;
-        box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1);
-      }
-    </style>
-  </head>
-  <body>
-    <div id="unity-container">
-      <canvas id="unity-canvas" tabindex="-1"></canvas>
-      <div id="unity-loading-bar">
-        <div class="spinner"></div>
-        <div id="loading-text">Loading application...</div>
-        <div id="unity-progress-bar-empty">
-          <div id="unity-progress-bar-full"></div>
+<html lang="en" data-theme="dark">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Kangi — NFT QR Manager</title>
+  <meta name="description" content="Create NFT batches, generate unique QR codes, and manage secure one-time redemptions." />
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet" />
+  <script src="https://download.playfab.com/PlayFabClientApi.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
+  <link rel="stylesheet" href="styles.css" />
+</head>
+<body>
+
+<!-- LOGIN -->
+<div id="loginView" class="auth-screen">
+  <div class="auth-glow"></div>
+  <div class="auth-card">
+    <div class="auth-logo">
+      <div class="logo-icon">
+        <svg viewBox="0 0 40 40" fill="none">
+          <rect x="4" y="4" width="32" height="32" rx="9" fill="url(#lg1)"/>
+          <path d="M13 27V13h4l8 9V13h4v14h-4L17 18v9h-4Z" fill="white"/>
+          <defs>
+            <linearGradient id="lg1" x1="0" y1="0" x2="40" y2="40">
+              <stop offset="0%" stop-color="#6C63FF"/>
+              <stop offset="100%" stop-color="#3ECFCF"/>
+            </linearGradient>
+          </defs>
+        </svg>
+      </div>
+      <div>
+        <h1 class="auth-brand">Kangi</h1>
+        <p class="auth-tagline">NFT QR Manager</p>
+      </div>
+    </div>
+    <h2 class="auth-heading">Welcome back</h2>
+    <p class="auth-sub">Sign in to manage your NFT collection</p>
+    <div id="loginAlert" class="alert hidden"></div>
+    <form id="loginForm" class="auth-form" autocomplete="off">
+      <div class="field-group">
+        <label for="loginUsername">Email Address</label>
+        <div class="input-wrap">
+          <svg class="input-icon" viewBox="0 0 20 20" fill="currentColor"><path d="M2.003 5.884L10 9.882l7.997-3.998A2 2 0 0016 4H4a2 2 0 00-1.997 1.884z"/><path d="M18 8.118l-8 4-8-4V14a2 2 0 002 2h12a2 2 0 002-2V8.118z"/></svg>
+          <input id="loginUsername" type="email" placeholder="Enter your email address" value="" autocomplete="email" />
         </div>
       </div>
-      <div id="unity-warning"></div>
+      <div class="field-group">
+        <label for="loginPassword">Password</label>
+        <div class="input-wrap">
+          <svg class="input-icon" viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M5 9V7a5 5 0 0110 0v2a2 2 0 012 2v5a2 2 0 01-2 2H5a2 2 0 01-2-2v-5a2 2 0 012-2zm8-2v2H7V7a3 3 0 016 0z" clip-rule="evenodd"/></svg>
+          <input id="loginPassword" type="password" placeholder="Enter your password" value="" autocomplete="current-password" />
+        </div>
+      </div>
+      <button id="loginBtn" type="submit" class="btn btn-primary btn-full">
+        <span class="btn-text">Sign In</span>
+        <span class="btn-loader hidden"></span>
+      </button>
+    </form>
+
+  </div>
+</div>
+
+<!-- APP -->
+<div id="appView" class="app hidden">
+  <aside class="sidebar" id="sidebar">
+    <div class="sidebar-brand">
+      <div class="logo-icon logo-icon--sm">
+        <svg viewBox="0 0 40 40" fill="none">
+          <rect x="4" y="4" width="32" height="32" rx="9" fill="url(#lg2)"/>
+          <path d="M13 27V13h4l8 9V13h4v14h-4L17 18v9h-4Z" fill="white"/>
+          <defs>
+            <linearGradient id="lg2" x1="0" y1="0" x2="40" y2="40">
+              <stop offset="0%" stop-color="#6C63FF"/>
+              <stop offset="100%" stop-color="#3ECFCF"/>
+            </linearGradient>
+          </defs>
+        </svg>
+      </div>
+      <div>
+        <span class="brand-name">Kangi</span>
+        <span class="brand-sub">NFT QR Manager</span>
+      </div>
     </div>
-    <script>
-      var container = document.querySelector("#unity-container");
-      var canvas = document.querySelector("#unity-canvas");
-      var loadingBar = document.querySelector("#unity-loading-bar");
-      var progressBarFull = document.querySelector("#unity-progress-bar-full");
-      var warningBanner = document.querySelector("#unity-warning");
+    <nav class="sidebar-nav">
+      <button class="nav-item active" data-view="dashboard">
+        <svg viewBox="0 0 20 20" fill="currentColor"><path d="M3 4a1 1 0 011-1h12a1 1 0 011 1v2a1 1 0 01-1 1H4a1 1 0 01-1-1V4zm0 6a1 1 0 011-1h12a1 1 0 011 1v2a1 1 0 01-1 1H4a1 1 0 01-1-1v-2zm0 6a1 1 0 011-1h12a1 1 0 011 1v2a1 1 0 01-1 1H4a1 1 0 01-1-1v-2z"/></svg>
+        Dashboard
+      </button>
+      <button class="nav-item" data-view="create">
+        <svg viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M10 3a1 1 0 011 1v5h5a1 1 0 110 2h-5v5a1 1 0 11-2 0v-5H4a1 1 0 110-2h5V4a1 1 0 011-1z" clip-rule="evenodd"/></svg>
+        Create NFT
+      </button>
+      <button class="nav-item" data-view="manage">
+        <svg viewBox="0 0 20 20" fill="currentColor"><path d="M3 12v3c0 1.657 3.134 3 7 3s7-1.343 7-3v-3c0 1.657-3.134 3-7 3s-7-1.343-7-3z"/><path d="M3 7v3c0 1.657 3.134 3 7 3s7-1.343 7-3V7c0 1.657-3.134 3-7 3S3 8.657 3 7z"/><path d="M17 5c0 1.657-3.134 3-7 3S3 6.657 3 5s3.134-3 7-3 7 1.343 7 3z"/></svg>
+        Manage QRs
+      </button>
+      <button class="nav-item" data-view="redeem">
+        <svg viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M4 4a2 2 0 00-2 2v4a2 2 0 002 2V6h10a2 2 0 00-2-2H4zm2 6a2 2 0 012-2h8a2 2 0 012 2v4a2 2 0 01-2 2H8a2 2 0 01-2-2v-4zm6 4a2 2 0 100-4 2 2 0 000 4z" clip-rule="evenodd"/></svg>
+        Redeem
+      </button>
+    </nav>
+    <div class="sidebar-footer">
+      <div class="user-chip">
+        <div class="user-avatar" id="userAvatar">A</div>
+        <div class="user-info">
+          <span class="user-name" id="sidebarUsername">Admin</span>
+          <span class="user-role">Administrator</span>
+        </div>
+      </div>
+      <button id="logoutBtn" class="btn-icon-ghost" title="Sign out">
+        <svg viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M3 3a1 1 0 00-1 1v12a1 1 0 102 0V4a1 1 0 00-1-1zm10.293 9.293a1 1 0 001.414 1.414l3-3a1 1 0 000-1.414l-3-3a1 1 0 10-1.414 1.414L14.586 9H7a1 1 0 100 2h7.586l-1.293 1.293z" clip-rule="evenodd"/></svg>
+      </button>
+    </div>
+  </aside>
 
-      // Portrait Aspect Ratio (e.g. 9:16)
-      var targetAspect = 9 / 16;
+  <main class="main-content">
+    <header class="topbar">
+      <div class="topbar-left">
+        <div>
+          <h2 id="pageTitle">Dashboard</h2>
+          <p id="pageSubtitle" class="page-sub">Overview of your NFT collection</p>
+        </div>
+      </div>
+      <div class="topbar-right">
+        <button id="themeToggle" class="btn-icon-ghost" title="Toggle theme">
+          <svg id="iconMoon" viewBox="0 0 20 20" fill="currentColor"><path d="M17.293 13.293A8 8 0 016.707 2.707a8.001 8.001 0 1010.586 10.586z"/></svg>
+          <svg id="iconSun" class="hidden" viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M10 2a1 1 0 011 1v1a1 1 0 11-2 0V3a1 1 0 011-1zm4 8a4 4 0 11-8 0 4 4 0 018 0zm-.464 4.95l.707.707a1 1 0 001.414-1.414l-.707-.707a1 1 0 00-1.414 1.414zm2.12-10.607a1 1 0 010 1.414l-.706.707a1 1 0 11-1.414-1.414l.707-.707a1 1 0 011.414 0zM17 11a1 1 0 100-2h-1a1 1 0 100 2h1zm-7 4a1 1 0 011 1v1a1 1 0 11-2 0v-1a1 1 0 011-1zM5.05 6.464A1 1 0 106.465 5.05l-.708-.707a1 1 0 00-1.414 1.414l.707.707zm1.414 8.486l-.707.707a1 1 0 01-1.414-1.414l.707-.707a1 1 0 011.414 1.414zM4 11a1 1 0 100-2H3a1 1 0 000 2h1z" clip-rule="evenodd"/></svg>
+        </button>
+        <button id="refreshBtn" class="btn-icon-ghost" title="Refresh">
+          <svg viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M4 2a1 1 0 011 1v2.101a7.002 7.002 0 0111.601 2.566 1 1 0 11-1.885.666A5.002 5.002 0 005.999 7H9a1 1 0 010 2H4a1 1 0 01-1-1V3a1 1 0 011-1zm.008 9.057a1 1 0 011.276.61A5.002 5.002 0 0014.001 13H11a1 1 0 110-2h5a1 1 0 011 1v5a1 1 0 11-2 0v-2.101a7.002 7.002 0 01-11.601-2.566 1 1 0 01.61-1.276z" clip-rule="evenodd"/></svg>
+        </button>
+      </div>
+    </header>
 
-      function resizeContainer() {
-        var windowWidth = window.innerWidth;
-        var windowHeight = window.innerHeight;
-        var windowAspect = windowWidth / windowHeight;
+    <div class="views-container">
 
-        var width, height;
+      <!-- DASHBOARD -->
+      <section id="dashboardView" class="view active">
+        <div class="stats-grid">
+          <div class="stat-card">
+            <div class="stat-icon stat-icon--purple">
+              <svg viewBox="0 0 20 20" fill="currentColor"><path d="M11 17a1 1 0 001.447.894l4-2A1 1 0 0017 15V9.236a1 1 0 00-1.447-.894l-4 2a1 1 0 00-.553.894V17zM15.211 6.276a1 1 0 000-1.788l-4.764-2.382a1 1 0 00-.894 0L4.789 4.488a1 1 0 000 1.788l4.764 2.382a1 1 0 00.894 0l4.764-2.382zM4.447 8.342A1 1 0 003 9.236V15a1 1 0 00.553.894l4 2A1 1 0 009 17v-5.764a1 1 0 00-.553-.894l-4-2z"/></svg>
+            </div>
+            <div class="stat-body"><strong id="statNfts">0</strong><span>Total NFTs</span></div>
+          </div>
+          <div class="stat-card">
+            <div class="stat-icon stat-icon--teal">
+              <svg viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M3 4a1 1 0 011-1h3a1 1 0 011 1v3a1 1 0 01-1 1H4a1 1 0 01-1-1V4zm2 2V5h1v1H5zM3 13a1 1 0 011-1h3a1 1 0 011 1v3a1 1 0 01-1 1H4a1 1 0 01-1-1v-3zm2 2v-1h1v1H5zM13 3a1 1 0 00-1 1v3a1 1 0 001 1h3a1 1 0 001-1V4a1 1 0 00-1-1h-3zm1 2v1h1V5h-1z" clip-rule="evenodd"/><path d="M11 4a1 1 0 10-2 0v1a1 1 0 002 0V4z"/></svg>
+            </div>
+            <div class="stat-body"><strong id="statCodes">0</strong><span>QR Codes</span></div>
+          </div>
+          <div class="stat-card">
+            <div class="stat-icon stat-icon--green">
+              <svg viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clip-rule="evenodd"/></svg>
+            </div>
+            <div class="stat-body"><strong id="statRedeemed">0</strong><span>Redeemed</span></div>
+          </div>
+        </div>
+        <div class="dash-grid">
+          <div class="card">
+            <div class="card-header"><h3>Recent NFTs</h3></div>
+            <div id="recentNftsList" class="card-body">
+              <div class="empty-state">
+                <svg viewBox="0 0 40 40" fill="none"><rect x="5" y="5" width="30" height="30" rx="6" stroke="currentColor" stroke-width="2"/><path d="M13 27V13h5l7 9V13h5v14h-5L18 18v9h-5Z" fill="currentColor"/></svg>
+                <p>No NFTs yet</p>
+              </div>
+            </div>
+          </div>
+          <div class="card">
+            <div class="card-header"><h3>Quick Actions</h3></div>
+            <div class="card-body quick-actions">
+              <button class="action-tile" data-nav="create">
+                <svg viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M10 3a1 1 0 011 1v5h5a1 1 0 110 2h-5v5a1 1 0 11-2 0v-5H4a1 1 0 110-2h5V4a1 1 0 011-1z" clip-rule="evenodd"/></svg>
+                <span>New NFT Batch</span>
+              </button>
+              <button class="action-tile" data-nav="manage">
+                <svg viewBox="0 0 20 20" fill="currentColor"><path d="M3 12v3c0 1.657 3.134 3 7 3s7-1.343 7-3v-3c0 1.657-3.134 3-7 3s-7-1.343-7-3z"/><path d="M3 7v3c0 1.657 3.134 3 7 3s7-1.343 7-3V7c0 1.657-3.134 3-7 3S3 8.657 3 7z"/><path d="M17 5c0 1.657-3.134 3-7 3S3 6.657 3 5s3.134-3 7-3 7 1.343 7 3z"/></svg>
+                <span>Manage Library</span>
+              </button>
+              <button class="action-tile" data-nav="redeem">
+                <svg viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M4 4a2 2 0 00-2 2v4a2 2 0 002 2V6h10a2 2 0 00-2-2H4zm2 6a2 2 0 012-2h8a2 2 0 012 2v4a2 2 0 01-2 2H8a2 2 0 01-2-2v-4zm6 4a2 2 0 100-4 2 2 0 000 4z" clip-rule="evenodd"/></svg>
+                <span>Redeem QR</span>
+              </button>
+            </div>
+          </div>
+        </div>
+      </section>
 
-        if (windowAspect > targetAspect) {
-          // Screen is wider than portrait aspect ratio (Desktop / Landscape)
-          height = windowHeight;
-          width = height * targetAspect;
-        } else {
-          // Screen is narrower (Mobile Portrait)
-          width = windowWidth;
-          height = width / targetAspect;
-          if (height > windowHeight) {
-            height = windowHeight;
-            width = height * targetAspect;
-          }
-        }
+      <!-- CREATE NFT -->
+      <section id="createView" class="view hidden">
+        <div class="card">
+          <div class="card-header">
+            <h3>New NFT Batch</h3>
+            <p>Create an NFT and generate multiple unique QR codes for distribution.</p>
+          </div>
+          <div class="card-body">
+            <div id="createAlert" class="alert hidden"></div>
+            <form id="nftForm" class="create-form">
+              <div class="form-row">
+                <div class="field-group">
+                  <label for="nftName">NFT Name</label>
+                  <input id="nftName" type="text" placeholder="e.g. Golden Dragon #1" required />
+                </div>
+                <div class="field-group">
+                  <label for="nftCount">QR Quantity</label>
+                  <input id="nftCount" type="number" min="1" max="50" placeholder="e.g. 10" required />
+                </div>
+              </div>
+              <div class="field-group">
+                <label for="nftImage">NFT Image</label>
+                <div class="file-drop" id="fileDrop">
+                  <input id="nftImage" type="file" accept="image/*" required class="file-input" />
+                  <div class="file-drop-inner" id="fileDropInner">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path stroke-linecap="round" stroke-linejoin="round" d="M2.25 15.75l5.159-5.159a2.25 2.25 0 013.182 0l5.159 5.159m-1.5-1.5l1.409-1.409a2.25 2.25 0 013.182 0l2.909 2.909"/></svg>
+                    <span id="fileLabel">Click or drag to upload image</span>
+                  </div>
+                  <img id="filePreview" class="file-preview hidden" alt="Preview" />
+                </div>
+              </div>
+              <div class="field-group">
+                <label for="nftDesc">Notes <span class="optional">(optional)</span></label>
+                <textarea id="nftDesc" placeholder="Collection, edition, utility notes..."></textarea>
+              </div>
+              <div class="form-actions">
+                <button type="submit" id="createNftBtn" class="btn btn-primary">
+                  <span class="btn-text">Generate QR Codes</span>
+                  <span class="btn-loader hidden"></span>
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      </section>
 
-        container.style.width = Math.floor(width) + "px";
-        container.style.height = Math.floor(height) + "px";
-        canvas.style.width = "100%";
-        canvas.style.height = "100%";
-      }
+      <!-- MANAGE QRs -->
+      <section id="manageView" class="view hidden">
+        <div class="card">
+          <div class="card-header card-header--between">
+            <div>
+              <h3>NFT Library</h3>
+              <p>All NFT batches and their unique QR codes.</p>
+            </div>
+            <button id="clearAllBtn" class="btn btn-danger btn-sm">
+              <svg viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M9 2a1 1 0 00-.894.553L7.382 4H4a1 1 0 000 2v10a2 2 0 002 2h8a2 2 0 002-2V6a1 1 0 100-2h-3.382l-.724-1.447A1 1 0 0011 2H9zM7 8a1 1 0 012 0v6a1 1 0 11-2 0V8zm5-1a1 1 0 00-1 1v6a1 1 0 102 0V8a1 1 0 00-1-1z" clip-rule="evenodd"/></svg>
+              Clear All
+            </button>
+          </div>
+          <div class="card-body" id="nftLibrary">
+            <div class="empty-state">
+              <svg viewBox="0 0 40 40" fill="none"><rect x="5" y="5" width="30" height="30" rx="6" stroke="currentColor" stroke-width="2"/><path d="M13 27V13h5l7 9V13h5v14h-5L18 18v9h-5Z" fill="currentColor"/></svg>
+              <p>No NFTs in your library yet</p>
+              <button class="btn btn-primary btn-sm" data-nav="create">Create your first NFT</button>
+            </div>
+          </div>
+        </div>
+      </section>
 
-      window.addEventListener('resize', resizeContainer);
-      resizeContainer();
+      <!-- REDEEM -->
+      <section id="redeemView" class="view hidden">
+        <div class="card redeem-card">
+          <div class="card-header">
+            <h3>Redeem QR Code</h3>
+            <p>Paste a token below to verify and complete a one-time redemption.</p>
+          </div>
+          <div class="card-body">
+            <div id="redeemAlert" class="alert alert--info">Enter or paste a QR token to redeem.</div>
+            <div class="redeem-form">
+              <div class="field-group">
+                <label for="redeemToken">Token</label>
+                <div class="input-wrap">
+                  <svg class="input-icon" viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M3 4a1 1 0 011-1h3a1 1 0 011 1v3a1 1 0 01-1 1H4a1 1 0 01-1-1V4zm2 2V5h1v1H5zM3 13a1 1 0 011-1h3a1 1 0 011 1v3a1 1 0 01-1 1H4a1 1 0 01-1-1v-3zm2 2v-1h1v1H5z" clip-rule="evenodd"/></svg>
+                  <input id="redeemToken" type="text" placeholder="Paste QR token here..." />
+                </div>
+              </div>
+              <button id="redeemBtn" class="btn btn-primary">
+                <span class="btn-text">Verify &amp; Redeem</span>
+                <span class="btn-loader hidden"></span>
+              </button>
+            </div>
+            <div id="redeemResult" class="redeem-result hidden"></div>
+          </div>
+        </div>
+      </section>
 
-      function unityShowBanner(msg, type) {
-        function updateBannerState() {
-          warningBanner.style.display = warningBanner.children.length ? 'block' : 'none';
-        }
-        var div = document.createElement('div');
-        div.innerHTML = msg;
-        warningBanner.appendChild(div);
-        if (type == 'error') div.style.background = '#ef4444';
-        else {
-          if (type == 'warning') div.style.background = '#f59e0b';
-          setTimeout(function() {
-            warningBanner.removeChild(div);
-            updateBannerState();
-          }, 5000);
-        }
-        updateBannerState();
-      }
+    </div>
+  </main>
+</div>
 
-      var buildUrl = "Build";
-      var loaderUrl = buildUrl + "/Kangi.loader.js";
-      var config = {
-        dataUrl: buildUrl + "/Kangi.data",
-        frameworkUrl: buildUrl + "/Kangi.framework.js",
-        codeUrl: buildUrl + "/Kangi.wasm",
-        streamingAssetsUrl: "StreamingAssets",
-        companyName: "DefaultCompany",
-        productName: "KangiAdminApp",
-        productVersion: "1.0",
-        showBanner: unityShowBanner,
-      };
-
-      if (/iPhone|iPad|iPod|Android/i.test(navigator.userAgent)) {
-        var meta = document.createElement('meta');
-        meta.name = 'viewport';
-        meta.content = 'width=device-width, height=device-height, initial-scale=1.0, user-scalable=no, shrink-to-fit=yes';
-        document.getElementsByTagName('head')[0].appendChild(meta);
-      }
-
-      loadingBar.style.display = "flex";
-
-      var script = document.createElement("script");
-      script.src = loaderUrl;
-      script.onload = () => {
-        createUnityInstance(canvas, config, (progress) => {
-          progressBarFull.style.width = (100 * progress) + "%";
-        }).then((unityInstance) => {
-          loadingBar.style.display = "none";
-        }).catch((message) => {
-          alert(message);
-        });
-      };
-      document.body.appendChild(script);
-    </script>
-  </body>
+<script src="service.js"></script>
+<script src="app.js"></script>
+</body>
 </html>

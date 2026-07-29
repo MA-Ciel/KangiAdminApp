@@ -510,3 +510,108 @@ handlers.nftQrWorkflow = function (args, context) {
 
     return { error: "No matching action found in PlayFab cloud script." };
 };
+
+
+// ====================================================================================
+// ADMIN USER MANAGEMENT WORKFLOW
+// Handles granting admin privileges to a user by email address.
+// Copy and Paste this entire file into your PlayFab CloudScript Revision Editor.
+// ====================================================================================
+
+handlers.adminUserWorkflow = function (args, context) {
+    var action = args.action;
+
+    // ====================================================================================
+    // A. MAKE ADMIN — Look up user by email, set IsAdmin = "true" in their player data
+    // ====================================================================================
+    if (action === "makeAdmin") {
+        var targetEmail = args.email;
+
+        if (!targetEmail) {
+            return { success: false, error: "Email address is required." };
+        }
+
+        // Look up the PlayFab account by email address using the server API
+        var lookupResult;
+        try {
+            lookupResult = server.GetUserAccountInfo({
+                Email: targetEmail
+            });
+        } catch (e) {
+            return { success: false, error: "No account found with that email address. Make sure the user is registered." };
+        }
+
+        if (!lookupResult || !lookupResult.UserInfo || !lookupResult.UserInfo.PlayFabId) {
+            return { success: false, error: "No account found with that email address." };
+        }
+
+        var targetPlayFabId = lookupResult.UserInfo.PlayFabId;
+        var displayName = (lookupResult.UserInfo.TitleInfo && lookupResult.UserInfo.TitleInfo.DisplayName)
+            ? lookupResult.UserInfo.TitleInfo.DisplayName
+            : targetEmail;
+
+        // Set IsAdmin = "true" in the user's player data (readable by the client)
+        try {
+            server.UpdateUserData({
+                PlayFabId: targetPlayFabId,
+                Data: { "IsAdmin": "true" },
+                Permission: "Public"
+            });
+        } catch (e) {
+            return { success: false, error: "Failed to update user data: " + e };
+        }
+
+        log.info("adminUserWorkflow: Granted admin to " + targetEmail + " (PlayFabId: " + targetPlayFabId + ")");
+
+        return {
+            success:      true,
+            message:      "Admin privileges granted successfully.",
+            playFabId:    targetPlayFabId,
+            displayName:  displayName,
+            email:        targetEmail
+        };
+    }
+
+    // ====================================================================================
+    // B. REVOKE ADMIN — Remove IsAdmin flag from a user
+    // ====================================================================================
+    if (action === "revokeAdmin") {
+        var revokeEmail = args.email;
+
+        if (!revokeEmail) {
+            return { success: false, error: "Email address is required." };
+        }
+
+        var revokeLookup;
+        try {
+            revokeLookup = server.GetUserAccountInfo({ Email: revokeEmail });
+        } catch (e) {
+            return { success: false, error: "No account found with that email address." };
+        }
+
+        if (!revokeLookup || !revokeLookup.UserInfo || !revokeLookup.UserInfo.PlayFabId) {
+            return { success: false, error: "No account found with that email address." };
+        }
+
+        var revokePlayFabId = revokeLookup.UserInfo.PlayFabId;
+
+        try {
+            server.UpdateUserData({
+                PlayFabId: revokePlayFabId,
+                Data: { "IsAdmin": "false" },
+                Permission: "Public"
+            });
+        } catch (e) {
+            return { success: false, error: "Failed to update user data: " + e };
+        }
+
+        return {
+            success:   true,
+            message:   "Admin privileges revoked successfully.",
+            playFabId: revokePlayFabId,
+            email:     revokeEmail
+        };
+    }
+
+    return { error: "No matching action found in adminUserWorkflow." };
+};

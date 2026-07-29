@@ -902,3 +902,210 @@ input::placeholder, textarea::placeholder { color: var(--text-3); }
   transform: translateY(-1px);
 }
 
+
+/* ---- Login Screen Layout (Split: Brand Left / Form Right) ---- */
+.auth-split-container {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  min-height: 100dvh;
+  width: 100%;
+  max-width: 1100px;
+  margin: 0 auto;
+  align-items: center;
+  gap: 3rem;
+  padding: 2rem 1.5rem;
+}
+
+.auth-brand-side {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 2rem;
+}
+
+.auth-brand-side-content {
+  display: flex;
+  flex-direction: column;
+  gap: 1.75rem;
+  max-width: 420px;
+}
+
+.auth-brand-logo-wrap {
+  display: flex;
+  justify-content: flex-start;
+}
+
+/* Logo image sizing */
+.brand-logo-img {
+  display: block;
+  width: 52px;
+  height: 52px;
+  object-fit: contain;
+  border-radius: 12px;
+  flex-shrink: 0;
+}
+
+/* Large logo on brand side of login */
+.brand-logo-img--lg {
+  width: 130px;
+  height: 130px;
+  border-radius: 22px;
+  box-shadow: 0 0 40px rgba(236, 72, 153, 0.35), 0 8px 32px rgba(0, 0, 0, 0.6);
+}
+
+/* Small logo in sidebar brand area */
+.brand-logo-img--sm {
+  width: 36px;
+  height: 36px;
+  border-radius: 8px;
+}
+
+.auth-brand-headline h2 {
+  font-size: 1.6rem;
+  font-weight: 800;
+  letter-spacing: -0.03em;
+  line-height: 1.25;
+  color: var(--text);
+  margin-bottom: 0.65rem;
+}
+
+.auth-brand-headline p {
+  font-size: 0.9rem;
+  color: var(--text-2);
+  line-height: 1.65;
+}
+
+.auth-brand-footer {
+  margin-top: 0.25rem;
+}
+
+.auth-brand-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  font-size: 0.78rem;
+  font-weight: 600;
+  color: var(--teal);
+  background: rgba(34, 211, 238, 0.1);
+  border: 1px solid rgba(34, 211, 238, 0.25);
+  border-radius: 999px;
+  padding: 0.3rem 0.85rem;
+}
+
+.auth-form-side {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 2rem 1rem;
+}
+
+/* Mobile logo shown only on small screens */
+.auth-header-mobile {
+  display: none;
+  justify-content: center;
+  margin-bottom: 1.5rem;
+}
+
+.auth-header-mobile .brand-logo-img {
+  width: 64px;
+  height: 64px;
+  border-radius: 14px;
+  box-shadow: 0 0 24px rgba(236, 72, 153, 0.4);
+}
+
+@media (max-width: 760px) {
+  .auth-split-container {
+    grid-template-columns: 1fr;
+    gap: 0;
+    padding: 1.5rem 1rem;
+    align-items: flex-start;
+  }
+  .auth-brand-side { display: none; }
+  .auth-form-side { padding: 2rem 0; width: 100%; }
+  .auth-header-mobile { display: flex; }
+}
+
+/* ---- Badge / Role pill (Settings view) ---- */
+.badge {
+  display: inline-flex;
+  align-items: center;
+  padding: 0.25rem 0.7rem;
+  border-radius: 999px;
+  font-size: 0.75rem;
+  font-weight: 700;
+}
+.badge-purple {
+  background: rgba(168, 85, 247, 0.2);
+  color: #d8b4fe;
+  border: 1px solid rgba(168, 85, 247, 0.35);
+}
+.badge-success {
+  background: rgba(74, 222, 128, 0.15);
+  color: #86efac;
+  border: 1px solid rgba(74, 222, 128, 0.3);
+}
+
+/* ---- btn-secondary (used in Settings) ---- */
+.btn-secondary {
+  background: rgba(168, 85, 247, 0.15);
+  color: var(--text);
+  border: 1px solid rgba(168, 85, 247, 0.3);
+  border-radius: 999px;
+}
+.btn-secondary:hover:not(:disabled) {
+  background: rgba(168, 85, 247, 0.28);
+  border-color: rgba(168, 85, 247, 0.55);
+}
+
+/* ---- User Management View ---- */
+.user-mgmt-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 1.35rem;
+  align-items: flex-start;
+}
+@media (max-width: 800px) {
+  .user-mgmt-grid { grid-template-columns: 1fr; }
+}
+
+.user-mgmt-form {
+  display: flex;
+  flex-direction: column;
+  gap: 1.1rem;
+}
+
+.make-admin-result {
+  margin-top: 1.25rem;
+  padding: 1rem 1.25rem;
+  border-radius: var(--radius-lg);
+  border: 1px solid rgba(74, 222, 128, 0.3);
+  background: rgba(74, 222, 128, 0.08);
+  font-size: 0.85rem;
+  color: #86efac;
+  line-height: 1.65;
+}
+
+.user-mgmt-info-list {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+}
+
+.user-mgmt-info-item {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.75rem;
+  padding: 0.85rem 1rem;
+  border-radius: var(--radius);
+  background: rgba(27, 12, 54, 0.6);
+  border: 1px solid var(--border);
+  font-size: 0.82rem;
+  color: var(--text-2);
+  line-height: 1.55;
+}
+
+.user-mgmt-info-item svg {
+  flex-shrink: 0;
+  margin-top: 1px;
+  color: var(--teal);
+}

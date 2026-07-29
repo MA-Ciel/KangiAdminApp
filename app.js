@@ -76,7 +76,14 @@
     btnFilterAllSongs: $('btnFilterAllSongs'),
     btnFilterPendingSongs: $('btnFilterPendingSongs'),
     btnFilterApprovedSongs: $('btnFilterApprovedSongs'),
-    soundsAlert:    $('soundsAlert')
+    soundsAlert:    $('soundsAlert'),
+
+    /* User Management */
+    makeAdminForm:      $('makeAdminForm'),
+    adminTargetEmail:   $('adminTargetEmail'),
+    makeAdminBtn:       $('makeAdminBtn'),
+    userMgmtAlert:      $('userMgmtAlert'),
+    makeAdminResult:    $('makeAdminResult')
   };
 
   /* ─── App state ─── */
@@ -89,6 +96,7 @@
     manage:    { title: 'Manage QRs', sub: 'Browse all NFT batches, download QRs and copy redeem links' },
     sounds:    { title: 'Sounds Library', sub: 'Approve or delete audio files submitted to the server' },
     redeem:    { title: 'Redeem',     sub: 'Verify and process a one-time QR code redemption' },
+    users:     { title: 'User Management', sub: 'Grant or revoke administrator access for platform users' },
     settings:  { title: 'Settings & Account', sub: 'Manage administrator profile, application settings, and account session' }
   };
 
@@ -110,6 +118,7 @@
     _bindMenuToggle();
     _bindTheme();
     _bindSettings();
+    _bindUserManagement();
   }
 
   /* ================================================================
@@ -964,7 +973,64 @@
     return `<svg viewBox="0 0 40 40" fill="none"><rect x="5" y="5" width="30" height="30" rx="6" stroke="currentColor" stroke-width="2"/><path d="M13 27V13h5l7 9V13h5v14h-5L18 18v9h-5Z" fill="currentColor"/></svg>`;
   }
 
-  /* ── Start ── */
+  /* ================================================================
+     USER MANAGEMENT — Grant admin access via CloudScript
+     ================================================================ */
+  function _bindUserManagement() {
+    if (!el.makeAdminForm) return;
+
+    el.makeAdminForm.addEventListener('submit', async (e) => {
+      e.preventDefault();
+      const email = el.adminTargetEmail.value.trim();
+
+      if (!email) {
+        return _alert(el.userMgmtAlert, 'error', 'Please enter an email address.');
+      }
+
+      /* Hide previous result */
+      el.makeAdminResult.classList.add('hidden');
+      _setLoading(el.makeAdminBtn, true);
+      _alert(el.userMgmtAlert, 'info', 'Looking up account and granting admin access…');
+
+      try {
+        const res = await KangiService.makeAdmin(email);
+
+        if (res && res.success) {
+          _hideEl(el.userMgmtAlert);
+
+          const displayName = res.displayName || email.split('@')[0];
+          el.makeAdminResult.innerHTML = `
+            <div style="display:flex;align-items:center;gap:0.6rem;margin-bottom:0.65rem;">
+              <svg viewBox="0 0 20 20" fill="currentColor" style="width:18px;height:18px;color:#4ade80;flex-shrink:0;">
+                <path fill-rule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clip-rule="evenodd"/>
+              </svg>
+              <strong style="font-size:0.9rem;color:#fff;">Admin access granted successfully</strong>
+            </div>
+            <div style="font-size:0.8rem;color:#a7f3d0;line-height:1.7;">
+              <strong style="color:#fff;">User:</strong> ${_esc(displayName)}<br/>
+              <strong style="color:#fff;">Email:</strong> ${_esc(res.email || email)}<br/>
+              <strong style="color:#fff;">PlayFab ID:</strong> ${_esc(res.playFabId || '—')}<br/>
+              <strong style="color:#fff;">Status:</strong> <span style="color:#4ade80;">● IsAdmin = true</span>
+            </div>
+            <div style="font-size:0.75rem;color:#86efac;margin-top:0.65rem;padding-top:0.65rem;border-top:1px solid rgba(74,222,128,0.2);">
+              The user can now sign in to the admin dashboard with their existing credentials.
+            </div>`;
+          el.makeAdminResult.classList.remove('hidden');
+
+          /* Reset form */
+          el.makeAdminForm.reset();
+        } else {
+          _alert(el.userMgmtAlert, 'error', (res && res.error) || 'Failed to grant admin access.');
+        }
+      } catch (err) {
+        _alert(el.userMgmtAlert, 'error', typeof err === 'string' ? err : (err.message || 'An error occurred.'));
+      } finally {
+        _setLoading(el.makeAdminBtn, false);
+      }
+    });
+  }
+
+  /* ── Start ──*/
   if (document.readyState === 'loading') {
     document.addEventListener('DOMContentLoaded', boot);
   } else {

@@ -187,6 +187,36 @@ const KangiService = (function () {
   function deleteSong(songId) { return _callVideoScript('deleteSong', { adminData: { songId } }); }
 
   /* ============================================================
+     USER MANAGEMENT  (calls adminUserWorkflow)
+     ============================================================ */
+
+  /* Internal helper for adminUserWorkflow CloudScript */
+  function _callAdminScript(action, args) {
+    return new Promise((resolve, reject) => {
+      PlayFabClientSDK.ExecuteCloudScript(
+        {
+          FunctionName:            'adminUserWorkflow',
+          FunctionParameter:       { action, ...args },
+          GeneratePlayStreamEvent: true
+        },
+        (result, error) => {
+          if (error) { reject(_friendlyError(error)); return; }
+          const fn = result?.data?.FunctionResult;
+          if (!fn) { reject('No response from server function.'); return; }
+          if (fn.error) { reject(fn.error); return; }
+          resolve(fn);
+        }
+      );
+    });
+  }
+
+  /* Grant admin role to a user by email */
+  function makeAdmin(email) { return _callAdminScript('makeAdmin', { email }); }
+
+  /* Revoke admin role from a user by email */
+  function revokeAdmin(email) { return _callAdminScript('revokeAdmin', { email }); }
+
+  /* ============================================================
      IMAGE UTIL — resize + compress before storing
      ============================================================ */
   function resizeImage(file, maxWidth = 240) {
@@ -237,7 +267,9 @@ const KangiService = (function () {
     resizeImage,
     getSongs,
     approveSong,
-    deleteSong
+    deleteSong,
+    makeAdmin,
+    revokeAdmin
   };
 
 })();

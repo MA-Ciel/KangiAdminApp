@@ -24,8 +24,8 @@
           <path d="M13 27V13h4l8 9V13h4v14h-4L17 18v9h-4Z" fill="white"/>
           <defs>
             <linearGradient id="lg1" x1="0" y1="0" x2="40" y2="40">
-              <stop offset="0%" stop-color="#6C63FF"/>
-              <stop offset="100%" stop-color="#3ECFCF"/>
+              <stop offset="0%" stop-color="#EC4899"/>
+              <stop offset="100%" stop-color="#FFE600"/>
             </linearGradient>
           </defs>
         </svg>
@@ -72,8 +72,8 @@
           <path d="M13 27V13h4l8 9V13h4v14h-4L17 18v9h-4Z" fill="white"/>
           <defs>
             <linearGradient id="lg2" x1="0" y1="0" x2="40" y2="40">
-              <stop offset="0%" stop-color="#6C63FF"/>
-              <stop offset="100%" stop-color="#3ECFCF"/>
+              <stop offset="0%" stop-color="#EC4899"/>
+              <stop offset="100%" stop-color="#FFE600"/>
             </linearGradient>
           </defs>
         </svg>
@@ -95,6 +95,10 @@
       <button class="nav-item" data-view="manage">
         <svg viewBox="0 0 20 20" fill="currentColor"><path d="M3 12v3c0 1.657 3.134 3 7 3s7-1.343 7-3v-3c0 1.657-3.134 3-7 3s-7-1.343-7-3z"/><path d="M3 7v3c0 1.657 3.134 3 7 3s7-1.343 7-3V7c0 1.657-3.134 3-7 3S3 8.657 3 7z"/><path d="M17 5c0 1.657-3.134 3-7 3S3 6.657 3 5s3.134-3 7-3 7 1.343 7 3z"/></svg>
         Manage QRs
+      </button>
+      <button class="nav-item" data-view="sounds">
+        <svg viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M18 3a1 1 0 00-1.196-.98l-10 2A1 1 0 006 5v9.114A4.369 4.369 0 005 14c-1.657 0-3 .895-3 2s1.343 2 3 2 3-.895 3-2V7.82l8-1.6v5.894A4.37 4.37 0 0015 12c-1.657 0-3 .895-3 2s1.343 2 3 2 3-.895 3-2V3z" clip-rule="evenodd"/></svg>
+        Sounds
       </button>
       <button class="nav-item" data-view="redeem">
         <svg viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M4 4a2 2 0 00-2 2v4a2 2 0 002 2V6h10a2 2 0 00-2-2H4zm2 6a2 2 0 012-2h8a2 2 0 012 2v4a2 2 0 01-2 2H8a2 2 0 01-2-2v-4zm6 4a2 2 0 100-4 2 2 0 000 4z" clip-rule="evenodd"/></svg>
@@ -118,6 +122,9 @@
   <main class="main-content">
     <header class="topbar">
       <div class="topbar-left">
+        <button id="menuToggleBtn" class="btn-icon-ghost mobile-menu-toggle" title="Toggle Menu" style="margin-right: 0.6rem; display: none;">
+          <svg viewBox="0 0 20 20" fill="currentColor" style="width:20px;height:20px;"><path fill-rule="evenodd" d="M3 5a1 1 0 011-1h12a1 1 0 110 2H4a1 1 0 01-1-1zm0 5a1 1 0 011-1h12a1 1 0 110 2H4a1 1 0 01-1-1zm0 5a1 1 0 011-1h12a1 1 0 110 2H4a1 1 0 01-1-1z" clip-rule="evenodd"/></svg>
+        </button>
         <div>
           <h2 id="pageTitle">Dashboard</h2>
           <p id="pageSubtitle" class="page-sub">Overview of your NFT collection</p>
@@ -189,7 +196,7 @@
       </section>
 
       <!-- CREATE NFT -->
-      <section id="createView" class="view hidden">
+      <section id="createView" class="view">
         <div class="card">
           <div class="card-header">
             <h3>New NFT Batch</h3>
@@ -210,13 +217,12 @@
               </div>
               <div class="field-group">
                 <label for="nftImage">NFT Image</label>
-                <div class="file-drop" id="fileDrop">
+                <div class="file-input-bar" id="fileDrop">
                   <input id="nftImage" type="file" accept="image/*" required class="file-input" />
-                  <div class="file-drop-inner" id="fileDropInner">
-                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path stroke-linecap="round" stroke-linejoin="round" d="M2.25 15.75l5.159-5.159a2.25 2.25 0 013.182 0l5.159 5.159m-1.5-1.5l1.409-1.409a2.25 2.25 0 013.182 0l2.909 2.909"/></svg>
-                    <span id="fileLabel">Click or drag to upload image</span>
+                  <div class="file-input-content">
+                    <span class="btn-choose-file">Choose File</span>
+                    <span id="filePreviewName" class="file-name-text">No file chosen</span>
                   </div>
-                  <img id="filePreview" class="file-preview hidden" alt="Preview" />
                 </div>
               </div>
               <div class="field-group">
@@ -235,7 +241,7 @@
       </section>
 
       <!-- MANAGE QRs -->
-      <section id="manageView" class="view hidden">
+      <section id="manageView" class="view">
         <div class="card">
           <div class="card-header card-header--between">
             <div>
@@ -257,8 +263,34 @@
         </div>
       </section>
 
+      <!-- SOUNDS -->
+      <section id="soundsView" class="view">
+        <div class="card">
+          <div class="card-header card-header--between">
+            <div>
+              <h3>Sounds Library</h3>
+              <p>Approve or delete audio files submitted to the server.</p>
+            </div>
+            <div style="display:flex;gap:0.5rem;align-items:center;">
+              <button class="btn btn-ghost btn-sm active" id="btnFilterAllSongs">All Sounds</button>
+              <button class="btn btn-ghost btn-sm" id="btnFilterPendingSongs">Pending</button>
+              <button class="btn btn-ghost btn-sm" id="btnFilterApprovedSongs">Available</button>
+            </div>
+          </div>
+          <div class="card-body">
+            <div id="soundsAlert" class="alert hidden"></div>
+            <div id="soundsLibrary" class="song-list">
+              <div class="empty-state">
+                <svg viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M18 3a1 1 0 00-1.196-.98l-10 2A1 1 0 006 5v9.114A4.369 4.369 0 005 14c-1.657 0-3 .895-3 2s1.343 2 3 2 3-.895 3-2V7.82l8-1.6v5.894A4.37 4.37 0 0015 12c-1.657 0-3 .895-3 2s1.343 2 3 2 3-.895 3-2V3z" clip-rule="evenodd"/></svg>
+                <p>No songs found</p>
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+
       <!-- REDEEM -->
-      <section id="redeemView" class="view hidden">
+      <section id="redeemView" class="view">
         <div class="card redeem-card">
           <div class="card-header">
             <h3>Redeem QR Code</h3>

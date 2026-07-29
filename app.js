@@ -48,6 +48,8 @@
     fileDrop:       $('fileDrop'),
     fileDropInner:  $('fileDropInner'),
     filePreview:    $('filePreview'),
+    filePreviewWrap:$('filePreviewWrap'),
+    filePreviewName:$('filePreviewName'),
 
     /* Manage */
     nftLibrary:     $('nftLibrary'),
@@ -57,17 +59,25 @@
     redeemAlert:    $('redeemAlert'),
     redeemToken:    $('redeemToken'),
     redeemBtn:      $('redeemBtn'),
-    redeemResult:   $('redeemResult')
+    redeemResult:   $('redeemResult'),
+
+    /* Sounds */
+    soundsLibrary:  $('soundsLibrary'),
+    btnFilterAllSongs: $('btnFilterAllSongs'),
+    btnFilterPendingSongs: $('btnFilterPendingSongs'),
+    btnFilterApprovedSongs: $('btnFilterApprovedSongs'),
+    soundsAlert:    $('soundsAlert')
   };
 
   /* ─── App state ─── */
-  const state = { nfts: [] };
+  const state = { nfts: [], songs: [], songFilter: 'all' };
 
   /* ─── View metadata ─── */
   const VIEWS = {
     dashboard: { title: 'Dashboard',  sub: 'Overview of your NFT collection and activity' },
     create:    { title: 'Create NFT', sub: 'Upload an NFT image and generate unique QR codes' },
     manage:    { title: 'Manage QRs', sub: 'Browse all NFT batches, download QRs and copy redeem links' },
+    sounds:    { title: 'Sounds Library', sub: 'Approve or delete audio files submitted to the server' },
     redeem:    { title: 'Redeem',     sub: 'Verify and process a one-time QR code redemption' }
   };
 
@@ -82,6 +92,7 @@
     _bindNav();
     _bindCreate();
     _bindFileDrop();
+    _bindSounds();
     _bindRedeem();
     _bindClearAll();
     _bindRefresh();
@@ -167,12 +178,18 @@
     );
   }
 
-  function _switchView(name) {
-    document.querySelectorAll('.view').forEach(v => v.classList.remove('active'));
+  async function _switchView(name) {
+    document.querySelectorAll('.view').forEach(v => {
+      v.classList.remove('active');
+      v.classList.remove('hidden');
+    });
     document.querySelectorAll('.nav-item').forEach(b => b.classList.remove('active'));
 
     const view = $(`${name}View`);
-    if (view) view.classList.add('active');
+    if (view) {
+      view.classList.remove('hidden');
+      view.classList.add('active');
+    }
 
     const navBtn = document.querySelector(`.nav-item[data-view="${name}"]`);
     if (navBtn) navBtn.classList.add('active');
@@ -180,6 +197,10 @@
     const meta = VIEWS[name] || { title: name, sub: '' };
     el.pageTitle.textContent = meta.title;
     el.pageSub.textContent   = meta.sub;
+
+    if (name === 'sounds') {
+      await _loadSongsData();
+    }
   }
 
   /* ================================================================
@@ -424,10 +445,9 @@
   function _onFileChosen() {
     const file = el.nftImage.files[0];
     if (!file) return;
-    const url = URL.createObjectURL(file);
-    el.filePreview.src = url;
-    el.filePreview.classList.remove('hidden');
-    el.fileDropInner.classList.add('hidden');
+    if (el.filePreviewName) {
+      el.filePreviewName.textContent = file.name;
+    }
   }
 
   function _bindCreate() {
@@ -484,8 +504,8 @@
 
           /* Reset form */
           el.nftForm.reset();
-          el.filePreview.classList.add('hidden');
-          el.fileDropInner.classList.remove('hidden');
+          if (el.filePreview) el.filePreview.classList.add('hidden');
+          if (el.filePreviewName) el.filePreviewName.textContent = 'No file chosen';
 
           /* Reload data and switch to manage tab */
           await _loadAllData();
@@ -576,6 +596,193 @@
   window.addEventListener('hashchange', () => {
     if (location.hash.startsWith('#redeem/') && KangiService.session.isLoggedIn()) {
       _checkHashRedeem();
+    }
+  });
+
+  /* ================================================================
+     SOUNDS — Management of Audio Tracks
+     ================================================================ */
+  function _bindSounds() {
+    if (!el.soundsLibrary) return;
+
+    el.btnFilterAllSongs?.addEventListener('click', () => _setSongFilter('all'));
+    el.btnFilterPendingSongs?.addEventListener('click', () => _setSongFilter('pending'));
+    el.btnFilterApprovedSongs?.addEventListener('click', () => _setSongFilter('approved'));
+  }
+
+  function _setSongFilter(filter) {
+    state.songFilter = filter;
+    document.querySelectorAll('#soundsView .btn').forEach(btn => btn.classList.remove('active'));
+    
+    if (filter === 'all') el.btnFilterAllSongs?.classList.add('active');
+    if (filter === 'pending') el.btnFilterPendingSongs?.classList.add('active');
+    if (filter === 'approved') el.btnFilterApprovedSongs?.classList.add('active');
+
+    _renderSongsList();
+  }
+
+  async function _loadSongsData() {
+    if (!el.soundsLibrary) return;
+    el.soundsLibrary.innerHTML = `
+      <div class="empty-state">
+        <div class="btn-loader"></div>
+        <p>Loading songs from the server...</p>
+      </div>`;
+    try {
+      const res = await KangiService.getSongs();
+      state.songs = (res && Array.isArray(res.songs)) ? res.songs : 
+                    ((res && res.songs) ? res.songs : []);
+    } catch (e) {
+      console.error('[Kangi] Songs load error:', e);
+      state.songs = [];
+    }
+    _renderSongsList();
+  }
+
+  function _renderSongsList() {
+    if (!el.soundsLibrary) return;
+
+    let filtered = state.songs;
+    if (state.songFilter === 'pending') {
+      filtered = state.songs.filter(s => s.isPending === true || s.isPending === "true");
+    } else if (state.songFilter === 'approved') {
+      filtered = state.songs.filter(s => s.isPending === false || s.isPending === "false" || !s.isPending);
+    }
+
+    if (!filtered.length) {
+      el.soundsLibrary.innerHTML = `
+        <div class="empty-state">
+          <svg viewBox="0 0 20 20" fill="currentColor" style="width:40px;height:40px;opacity:0.4;color:var(--pink);"><path fill-rule="evenodd" d="M18 3a1 1 0 00-1.196-.98l-10 2A1 1 0 006 5v9.114A4.369 4.369 0 005 14c-1.657 0-3 .895-3 2s1.343 2 3 2 3-.895 3-2V7.82l8-1.6v5.894A4.37 4.37 0 0015 12c-1.657 0-3 .895-3 2s1.343 2 3 2 3-.895 3-2V3z" clip-rule="evenodd"/></svg>
+          <p>No songs found in this category</p>
+        </div>`;
+      return;
+    }
+
+    el.soundsLibrary.innerHTML = '';
+    filtered.forEach(song => {
+      const isPending = song.isPending === true || song.isPending === "true";
+      const songId = song.SongId || song.id;
+      const title = song.SongName || song.title || song.SongTitle || song.songTitle || song.Title || song.name || song.Name || "Untitled Song";
+      const artist = song.Singer || song.artist || song.artistName || song.SingerName || "Unknown Artist";
+      const cover = song.CoverUrl || song.cover || "";
+      const songUrl = song.SongUrl || song.songLink || song.url || song.musicUrl || "";
+
+      const row = document.createElement('div');
+      row.className = 'song-item';
+      row.innerHTML = `
+        ${cover ? `
+          <img class="song-cover" src="${_esc(cover)}" alt="Cover" data-action="preview" data-url="${_esc(songUrl)}" style="cursor:pointer;" title="Click to play/pause" />
+        ` : `
+          <div class="song-cover" style="display:grid;place-items:center;background:rgba(236,72,153,0.15);color:var(--pink);cursor:pointer;" data-action="preview" data-url="${_esc(songUrl)}" title="Click to play/pause">
+            <svg viewBox="0 0 20 20" fill="currentColor" style="width:20px;height:20px;"><path fill-rule="evenodd" d="M18 3a1 1 0 00-1.196-.98l-10 2A1 1 0 006 5v9.114A4.369 4.369 0 005 14c-1.657 0-3 .895-3 2s1.343 2 3 2 3-.895 3-2V7.82l8-1.6v5.894A4.37 4.37 0 0015 12c-1.657 0-3 .895-3 2s1.343 2 3 2 3-.895 3-2V3z" clip-rule="evenodd"/></svg>
+          </div>
+        `}
+        <div class="song-meta">
+          <span class="song-title-text">${_esc(title)}</span>
+          <span class="song-artist-text">${_esc(artist)}</span>
+          <div style="margin-top:0.35rem;">
+            <span class="chip ${isPending ? 'chip--red' : 'chip--green'}">${isPending ? 'Pending' : 'Available'}</span>
+          </div>
+        </div>
+        
+        ${songUrl ? `
+          <button class="song-preview-btn" data-action="preview" data-url="${_esc(songUrl)}" title="Preview song">
+            <svg viewBox="0 0 20 20" fill="currentColor" style="width:16px;height:16px;"><path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zM9.555 7.168A1 1 0 008 8v4a1 1 0 001.555.832l3-2a1 1 0 000-1.664l-3-2z" clip-rule="evenodd"/></svg>
+          </button>
+        ` : ''}
+
+        <div class="song-actions">
+          ${isPending ? `
+            <button class="btn btn-primary btn-sm" data-action="approve" data-id="${songId}">Approve</button>
+          ` : ''}
+          <button class="btn btn-danger btn-sm" data-action="delete" data-id="${songId}">Delete</button>
+        </div>
+      `;
+
+      el.soundsLibrary.appendChild(row);
+    });
+  }
+
+  // Handle Approve/Delete/Preview actions
+  document.getElementById('soundsView')?.addEventListener('click', async (e) => {
+    const btn = e.target.closest('[data-action]');
+    if (!btn) return;
+    const action = btn.dataset.action;
+    const songId = btn.dataset.id;
+
+    if (action === 'preview') {
+      const url = btn.dataset.url;
+      if (!url) {
+        _alert(el.soundsAlert, 'warning', 'No audio URL found for this song.');
+        return;
+      }
+      
+      let aud = document.getElementById('song-preview-player');
+      if (!aud) {
+        aud = document.createElement('audio');
+        aud.id = 'song-preview-player';
+        document.body.appendChild(aud);
+      }
+      
+      if (aud.dataset.currentUrl === url && !aud.paused) {
+        aud.pause();
+        /* reset play icon */
+        document.querySelectorAll('.song-preview-btn').forEach(b => {
+          b.innerHTML = `<svg viewBox="0 0 20 20" fill="currentColor" style="width:16px;height:16px;"><path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zM9.555 7.168A1 1 0 008 8v4a1 1 0 001.555.832l3-2a1 1 0 000-1.664l-3-2z" clip-rule="evenodd"/></svg>`;
+        });
+      } else {
+        aud.src = url;
+        aud.dataset.currentUrl = url;
+        aud.currentTime = 0;
+        aud.play().then(() => {
+          document.querySelectorAll('.song-preview-btn').forEach(b => {
+            b.innerHTML = `<svg viewBox="0 0 20 20" fill="currentColor" style="width:16px;height:16px;"><path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zM9.555 7.168A1 1 0 008 8v4a1 1 0 001.555.832l3-2a1 1 0 000-1.664l-3-2z" clip-rule="evenodd"/></svg>`;
+          });
+          btn.innerHTML = `<svg viewBox="0 0 20 20" fill="currentColor" style="width:16px;height:16px;"><path fill-rule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zM7 8a1 1 0 012 0v4a1 1 0 11-2 0V8zm5-1a1 1 0 00-1 1v4a1 1 0 102 0V8a1 1 0 00-1-1z" clip-rule="evenodd"/></svg>`;
+        }).catch((err) => {
+          console.error('[Kangi Audio Error]', err);
+          _alert(el.soundsAlert, 'error', 'Could not play audio. Please verify the Cloudinary link format or check your browser permissions.');
+        });
+      }
+    }
+
+    if (action === 'approve') {
+      btn.disabled = true;
+      btn.textContent = 'Approving...';
+      try {
+        const res = await KangiService.approveSong(songId);
+        if (res && res.success) {
+          _alert(el.soundsAlert, 'success', 'Song approved successfully.');
+          await _loadSongsData();
+        } else {
+          _alert(el.soundsAlert, 'error', res.error || 'Failed to approve song.');
+        }
+      } catch (err) {
+        _alert(el.soundsAlert, 'error', err);
+      } finally {
+        btn.disabled = false;
+        btn.textContent = 'Approve';
+      }
+    }
+
+    if (action === 'delete') {
+      if (!confirm('Are you sure you want to permanently delete this song from the server?')) return;
+      btn.disabled = true;
+      btn.textContent = 'Deleting...';
+      try {
+        const res = await KangiService.deleteSong(songId);
+        if (res && res.success) {
+          _alert(el.soundsAlert, 'success', 'Song deleted successfully.');
+          await _loadSongsData();
+        } else {
+          _alert(el.soundsAlert, 'error', res.error || 'Failed to delete song.');
+        }
+      } catch (err) {
+        _alert(el.soundsAlert, 'error', err);
+      } finally {
+        btn.disabled = false;
+        btn.textContent = 'Delete';
+      }
     }
   });
 

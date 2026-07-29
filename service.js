@@ -145,6 +145,48 @@ const KangiService = (function () {
   function clearAll() { return _callNftScript('clearAll', {}); }
 
   /* ============================================================
+     SONGS & MUSIC DATA  (calls videoAppWorkflow)
+     ============================================================ */
+
+  /* Call the CloudScript videoAppWorkflow handler */
+  function _callVideoScript(action, args) {
+    return new Promise((resolve, reject) => {
+      PlayFabClientSDK.ExecuteCloudScript(
+        {
+          FunctionName:       'videoAppWorkflow',
+          FunctionParameter:  { action, ...args },
+          GeneratePlayStreamEvent: true
+        },
+        (result, error) => {
+          if (error) { reject(_friendlyError(error)); return; }
+          const fn = result?.data?.FunctionResult;
+          if (!fn) { reject('No response from server function.'); return; }
+          let parsed = fn;
+          if (typeof fn === 'string') {
+            try {
+              parsed = JSON.parse(fn);
+            } catch (e) {
+              reject('Invalid response format.');
+              return;
+            }
+          }
+          if (parsed.error) { reject(parsed.error); return; }
+          resolve(parsed);
+        }
+      );
+    });
+  }
+
+  /* Fetch all pending, approved, and total songs */
+  function getSongs() { return _callVideoScript('getSongs', {}); }
+
+  /* Approve a pending song */
+  function approveSong(songId) { return _callVideoScript('approveSong', { adminData: { songId } }); }
+
+  /* Delete a song from server catalog */
+  function deleteSong(songId) { return _callVideoScript('deleteSong', { adminData: { songId } }); }
+
+  /* ============================================================
      IMAGE UTIL — resize + compress before storing
      ============================================================ */
   function resizeImage(file, maxWidth = 240) {
@@ -183,6 +225,19 @@ const KangiService = (function () {
   }
 
   /* ── Public API ── */
-  return { init, login, logout, session, getNfts, publishNft, redeemToken, clearAll, resizeImage };
+  return {
+    init,
+    login,
+    logout,
+    session,
+    getNfts,
+    publishNft,
+    redeemToken,
+    clearAll,
+    resizeImage,
+    getSongs,
+    approveSong,
+    deleteSong
+  };
 
 })();

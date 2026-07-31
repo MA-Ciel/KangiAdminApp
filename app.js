@@ -1165,25 +1165,25 @@
         </div>
         <div class="user-card-actions">
           ${!user.isAdmin && !user.isBanned && user.email
-            ? `<button class="btn btn-ghost btn-sm user-action-btn" data-uaction="makeAdmin" data-email="${_esc(user.email)}" data-name="${_esc(user.displayName || user.email)}">
+            ? `<button class="btn btn-ghost btn-sm user-action-btn" data-uaction="makeAdmin" data-email="${_esc(user.email)}" data-pfid="${_esc(user.playFabId)}" data-name="${_esc(user.displayName || user.email)}">
                 <svg viewBox="0 0 20 20" fill="currentColor" style="width:13px;height:13px;"><path fill-rule="evenodd" d="M2.166 4.999A11.954 11.954 0 0010 1.944 11.954 11.954 0 0017.834 5c.11.65.166 1.32.166 2.001 0 5.225-3.34 9.67-8 11.317C5.34 16.67 2 12.225 2 7c0-.682.057-1.35.166-2.001zm11.541 3.708a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clip-rule="evenodd"/></svg>
                 Make Admin
               </button>`
             : ''}
           ${user.isAdmin && user.email
-            ? `<button class="btn btn-ghost btn-sm user-action-btn" data-uaction="revokeAdmin" data-email="${_esc(user.email)}" data-name="${_esc(user.displayName || user.email)}">
+            ? `<button class="btn btn-ghost btn-sm user-action-btn" data-uaction="revokeAdmin" data-email="${_esc(user.email)}" data-pfid="${_esc(user.playFabId)}" data-name="${_esc(user.displayName || user.email)}">
                 <svg viewBox="0 0 20 20" fill="currentColor" style="width:13px;height:13px;"><path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zM8.707 7.293a1 1 0 00-1.414 1.414L8.586 10l-1.293 1.293a1 1 0 101.414 1.414L10 11.414l1.293 1.293a1 1 0 001.414-1.414L11.414 10l1.293-1.293a1 1 0 00-1.414-1.414L10 8.586 8.707 7.293z" clip-rule="evenodd"/></svg>
                 Revoke Admin
               </button>`
             : ''}
           ${!user.isBanned && user.email
-            ? `<button class="btn btn-danger btn-sm user-action-btn" data-uaction="ban" data-email="${_esc(user.email)}" data-name="${_esc(user.displayName || user.email)}">
+            ? `<button class="btn btn-danger btn-sm user-action-btn" data-uaction="ban" data-email="${_esc(user.email)}" data-pfid="${_esc(user.playFabId)}" data-name="${_esc(user.displayName || user.email)}">
                 <svg viewBox="0 0 20 20" fill="currentColor" style="width:13px;height:13px;"><path fill-rule="evenodd" d="M13.477 14.89A6 6 0 015.11 6.524L13.477 14.89zm1.414-1.414L6.524 5.11a6 6 0 018.367 8.367zM18 10a8 8 0 11-16 0 8 8 0 0116 0z" clip-rule="evenodd"/></svg>
                 Ban
               </button>`
             : ''}
           ${user.isBanned && user.email
-            ? `<button class="btn btn-ghost btn-sm user-action-btn" data-uaction="unban" data-email="${_esc(user.email)}" data-name="${_esc(user.displayName || user.email)}">
+            ? `<button class="btn btn-ghost btn-sm user-action-btn" data-uaction="unban" data-email="${_esc(user.email)}" data-pfid="${_esc(user.playFabId)}" data-name="${_esc(user.displayName || user.email)}">
                 <svg viewBox="0 0 20 20" fill="currentColor" style="width:13px;height:13px;"><path fill-rule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clip-rule="evenodd"/></svg>
                 Unban
               </button>`
@@ -1200,6 +1200,7 @@
 
       const action = btn.dataset.uaction;
       const email  = btn.dataset.email;
+      const pfid   = btn.dataset.pfid || '';
       const name   = btn.dataset.name || email;
 
       if (action === 'ban') {
@@ -1215,10 +1216,10 @@
 
       try {
         let res;
-        if (action === 'makeAdmin')   res = await KangiService.makeAdmin(email);
-        if (action === 'revokeAdmin') res = await KangiService.revokeAdmin(email);
-        if (action === 'ban')         res = await KangiService.banUser(email);
-        if (action === 'unban')       res = await KangiService.unbanUser(email);
+        if (action === 'makeAdmin')   res = await KangiService.makeAdmin(email, pfid);
+        if (action === 'revokeAdmin') res = await KangiService.revokeAdmin(email, pfid);
+        if (action === 'ban')         res = await KangiService.banUser(email, pfid);
+        if (action === 'unban')       res = await KangiService.unbanUser(email, pfid);
 
         if (res && res.success) {
           await _loadUsers(); /* refresh full list */

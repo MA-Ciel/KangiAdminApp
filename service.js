@@ -210,11 +210,11 @@ const KangiService = (function () {
     });
   }
 
-  /* Grant admin role to a user by email */
-  function makeAdmin(email) { return _callAdminScript('makeAdmin', { email }); }
+  /* Grant admin role — accepts email or playFabId */
+  function makeAdmin(email, playFabId)   { return _callAdminScript('makeAdmin',   { email: email || '', playFabId: playFabId || '' }); }
 
-  /* Revoke admin role from a user by email */
-  function revokeAdmin(email) { return _callAdminScript('revokeAdmin', { email }); }
+  /* Revoke admin role — accepts email or playFabId */
+  function revokeAdmin(email, playFabId) { return _callAdminScript('revokeAdmin', { email: email || '', playFabId: playFabId || '' }); }
 
   /* Register current user into the shared registry (call on every login) */
   function registerUser() {
@@ -228,11 +228,11 @@ const KangiService = (function () {
   /* Fetch all registered users from registry */
   function getAllUsers() { return _callAdminScript('getAllUsers', {}); }
 
-  /* Ban a user by email */
-  function banUser(email) { return _callAdminScript('banUser', { email }); }
+  /* Ban a user — accepts email or playFabId */
+  function banUser(email, playFabId)   { return _callAdminScript('banUser',   { email: email || '', playFabId: playFabId || '' }); }
 
-  /* Unban a user by email */
-  function unbanUser(email) { return _callAdminScript('unbanUser', { email }); }
+  /* Unban a user — accepts email or playFabId */
+  function unbanUser(email, playFabId) { return _callAdminScript('unbanUser', { email: email || '', playFabId: playFabId || '' }); }
 
   /* ============================================================
      IMAGE UTIL — resize + compress before storing

@@ -7,7 +7,7 @@
 const KangiService = (function () {
 
   /* ── Config ── */
-  const TITLE_ID     = '1D5959';
+  const TITLE_ID     = '182E5E';
   const NFT_DATA_KEY = 'GlobalAppNftsMasterList';
 
   /* ── Session State ── */
@@ -216,7 +216,16 @@ const KangiService = (function () {
   /* Revoke admin role from a user by email */
   function revokeAdmin(email) { return _callAdminScript('revokeAdmin', { email }); }
 
-  /* Fetch all registered users */
+  /* Register current user into the shared registry (call on every login) */
+  function registerUser() {
+    return _callAdminScript('registerUser', {
+      email:       session.email       || '',
+      displayName: session.displayName || '',
+      avatarUrl:   ''
+    });
+  }
+
+  /* Fetch all registered users from registry */
   function getAllUsers() { return _callAdminScript('getAllUsers', {}); }
 
   /* Ban a user by email */
@@ -279,6 +288,7 @@ const KangiService = (function () {
     deleteSong,
     makeAdmin,
     revokeAdmin,
+    registerUser,
     getAllUsers,
     banUser,
     unbanUser

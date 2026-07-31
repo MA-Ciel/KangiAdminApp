@@ -182,6 +182,9 @@
     _switchView('dashboard');
     _loadAllData();
     _checkHashRedeem();
+
+    /* Register this admin in the shared user registry (fire-and-forget) */
+    KangiService.registerUser().catch(() => {});
   }
 
   /* ================================================================
@@ -1146,43 +1149,45 @@
             ${user.isBanned ? `<span class="chip chip--red"    style="font-size:0.65rem;">Banned</span>` : ''}
           </div>
           <div class="user-card-meta">
-            <span title="PlayFab ID">
+            <span>
+              <svg viewBox="0 0 20 20" fill="currentColor" style="width:11px;height:11px;opacity:.6;"><path d="M2.003 5.884L10 9.882l7.997-3.998A2 2 0 0016 4H4a2 2 0 00-1.997 1.884z"/><path d="M18 8.118l-8 4-8-4V14a2 2 0 002 2h12a2 2 0 002-2V8.118z"/></svg>
+              ${user.email ? _esc(user.email) : '<em style="opacity:.5">no email</em>'}
+            </span>
+            <span>
               <svg viewBox="0 0 20 20" fill="currentColor" style="width:11px;height:11px;opacity:.6;"><path fill-rule="evenodd" d="M4 4a2 2 0 012-2h4.586A2 2 0 0112 2.586L15.414 6A2 2 0 0116 7.414V16a2 2 0 01-2 2H6a2 2 0 01-2-2V4z" clip-rule="evenodd"/></svg>
               ${_esc(user.playFabId)}
             </span>
-            <span title="Joined">
-              <svg viewBox="0 0 20 20" fill="currentColor" style="width:11px;height:11px;opacity:.6;"><path fill-rule="evenodd" d="M6 2a1 1 0 00-1 1v1H4a2 2 0 00-2 2v10a2 2 0 002 2h12a2 2 0 002-2V6a2 2 0 00-2-2h-1V3a1 1 0 10-2 0v1H7V3a1 1 0 00-1-1zm0 5a1 1 0 000 2h8a1 1 0 100-2H6z" clip-rule="evenodd"/></svg>
-              Joined ${_esc(joined)}
-            </span>
-            <span title="Last login">
+            ${user.lastLogin ? `<span>
               <svg viewBox="0 0 20 20" fill="currentColor" style="width:11px;height:11px;opacity:.6;"><path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm1-12a1 1 0 10-2 0v4a1 1 0 00.293.707l2.828 2.829a1 1 0 101.415-1.415L11 9.586V6z" clip-rule="evenodd"/></svg>
-              Last seen ${_esc(lastLogin)}
-            </span>
+              Last seen ${new Date(user.lastLogin).toLocaleDateString()}
+            </span>` : ''}
           </div>
         </div>
         <div class="user-card-actions">
-          ${!user.isAdmin && !user.isBanned
-            ? `<button class="btn btn-ghost btn-sm user-action-btn" data-uaction="makeAdmin" data-id="${_esc(user.playFabId)}" title="Grant admin">
+          ${!user.isAdmin && !user.isBanned && user.email
+            ? `<button class="btn btn-ghost btn-sm user-action-btn" data-uaction="makeAdmin" data-email="${_esc(user.email)}" data-name="${_esc(user.displayName || user.email)}">
                 <svg viewBox="0 0 20 20" fill="currentColor" style="width:13px;height:13px;"><path fill-rule="evenodd" d="M2.166 4.999A11.954 11.954 0 0010 1.944 11.954 11.954 0 0017.834 5c.11.65.166 1.32.166 2.001 0 5.225-3.34 9.67-8 11.317C5.34 16.67 2 12.225 2 7c0-.682.057-1.35.166-2.001zm11.541 3.708a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clip-rule="evenodd"/></svg>
                 Make Admin
               </button>`
             : ''}
-          ${user.isAdmin
-            ? `<button class="btn btn-ghost btn-sm user-action-btn" data-uaction="revokeAdmin" data-id="${_esc(user.playFabId)}" title="Revoke admin">
+          ${user.isAdmin && user.email
+            ? `<button class="btn btn-ghost btn-sm user-action-btn" data-uaction="revokeAdmin" data-email="${_esc(user.email)}" data-name="${_esc(user.displayName || user.email)}">
                 <svg viewBox="0 0 20 20" fill="currentColor" style="width:13px;height:13px;"><path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zM8.707 7.293a1 1 0 00-1.414 1.414L8.586 10l-1.293 1.293a1 1 0 101.414 1.414L10 11.414l1.293 1.293a1 1 0 001.414-1.414L11.414 10l1.293-1.293a1 1 0 00-1.414-1.414L10 8.586 8.707 7.293z" clip-rule="evenodd"/></svg>
                 Revoke Admin
               </button>`
             : ''}
-          ${!user.isBanned
-            ? `<button class="btn btn-danger btn-sm user-action-btn" data-uaction="ban" data-id="${_esc(user.playFabId)}" title="Ban user">
+          ${!user.isBanned && user.email
+            ? `<button class="btn btn-danger btn-sm user-action-btn" data-uaction="ban" data-email="${_esc(user.email)}" data-name="${_esc(user.displayName || user.email)}">
                 <svg viewBox="0 0 20 20" fill="currentColor" style="width:13px;height:13px;"><path fill-rule="evenodd" d="M13.477 14.89A6 6 0 015.11 6.524L13.477 14.89zm1.414-1.414L6.524 5.11a6 6 0 018.367 8.367zM18 10a8 8 0 11-16 0 8 8 0 0116 0z" clip-rule="evenodd"/></svg>
                 Ban
               </button>`
-            : `<button class="btn btn-ghost btn-sm user-action-btn" data-uaction="unban" data-id="${_esc(user.playFabId)}" title="Unban user">
+            : ''}
+          ${user.isBanned && user.email
+            ? `<button class="btn btn-ghost btn-sm user-action-btn" data-uaction="unban" data-email="${_esc(user.email)}" data-name="${_esc(user.displayName || user.email)}">
                 <svg viewBox="0 0 20 20" fill="currentColor" style="width:13px;height:13px;"><path fill-rule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clip-rule="evenodd"/></svg>
                 Unban
               </button>`
-          }
+            : ''}
         </div>`;
 
       el.usersList.appendChild(card);
@@ -1193,24 +1198,15 @@
       const btn = e.target.closest('[data-uaction]');
       if (!btn || btn.disabled) return;
 
-      const action   = btn.dataset.uaction;
-      const playFabId = btn.dataset.id;
-
-      /* For makeAdmin/revokeAdmin/ban/unban by ID we need email — not available
-         in the segment data, so we act by PlayFabId directly via CloudScript.
-         We reuse the existing service calls but pass playFabId as the identifier
-         and let the CloudScript handle it (already supports email; for id-based
-         actions we pass it in the email field as a fallback the CS handles). */
-
-      const card = btn.closest('.user-card');
-      const nameEl = card?.querySelector('.user-card-name');
-      const label = nameEl ? nameEl.childNodes[0]?.textContent?.trim() : playFabId;
+      const action = btn.dataset.uaction;
+      const email  = btn.dataset.email;
+      const name   = btn.dataset.name || email;
 
       if (action === 'ban') {
-        if (!confirm(`Ban "${label}"?\n\nThey will lose all access and their admin status will be removed.`)) return;
+        if (!confirm(`Ban "${name}"?\n\nThey will lose all access and their admin status will be removed.`)) return;
       }
       if (action === 'revokeAdmin') {
-        if (!confirm(`Revoke admin from "${label}"?`)) return;
+        if (!confirm(`Revoke admin from "${name}"?`)) return;
       }
 
       btn.disabled = true;
@@ -1219,14 +1215,13 @@
 
       try {
         let res;
-        if (action === 'makeAdmin')   res = await KangiService.makeAdmin(playFabId);
-        if (action === 'revokeAdmin') res = await KangiService.revokeAdmin(playFabId);
-        if (action === 'ban')         res = await KangiService.banUser(playFabId);
-        if (action === 'unban')       res = await KangiService.unbanUser(playFabId);
+        if (action === 'makeAdmin')   res = await KangiService.makeAdmin(email);
+        if (action === 'revokeAdmin') res = await KangiService.revokeAdmin(email);
+        if (action === 'ban')         res = await KangiService.banUser(email);
+        if (action === 'unban')       res = await KangiService.unbanUser(email);
 
         if (res && res.success) {
-          /* Refresh list to reflect new state */
-          await _loadUsers();
+          await _loadUsers(); /* refresh full list */
         } else {
           btn.disabled = false;
           btn.innerHTML = origHTML;

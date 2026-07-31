@@ -1160,6 +1160,27 @@ input::placeholder, textarea::placeholder { color: var(--text-3); }
   background: #1b0c36;
   color: var(--text);
 }
+/* Fix: chevron must be absolutely positioned, NOT a block element */
+.select-chevron {
+  position: absolute;
+  right: 1rem;
+  top: 50%;
+  transform: translateY(-50%);
+  width: 16px;
+  height: 16px;
+  display: block;
+  flex-shrink: 0;
+  color: var(--text-3);
+  pointer-events: none;
+  /* Override the global svg rule */
+  max-width: 16px !important;
+}
+/* Prevent global img/svg/canvas rule from blowing up icons inside select-wrap */
+.select-wrap svg {
+  max-width: none;
+  display: block;
+  flex-shrink: 0;
+}
 .select-chevron {
   position: absolute;
   right: 1rem;

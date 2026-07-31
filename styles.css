@@ -1120,3 +1120,131 @@ input::placeholder, textarea::placeholder { color: var(--text-3); }
   margin-top: 1px;
   color: var(--teal);
 }
+
+/* ---- Select / Dropdown field ---- */
+.select-wrap {
+  position: relative;
+  display: flex;
+  align-items: center;
+}
+.select-wrap .input-icon {
+  position: absolute;
+  left: 1rem;
+  top: 50%;
+  transform: translateY(-50%);
+  width: 16px; height: 16px;
+  color: var(--text-3);
+  pointer-events: none;
+  z-index: 1;
+}
+.select-wrap select {
+  width: 100%;
+  padding: 0.75rem 2.75rem 0.75rem 2.75rem;
+  border-radius: 999px;
+  border: 1px solid var(--border);
+  background: rgba(27, 12, 54, 0.8);
+  color: var(--text);
+  font-size: 0.875rem;
+  outline: none;
+  transition: all var(--transition);
+  appearance: none;
+  -webkit-appearance: none;
+  cursor: pointer;
+}
+.select-wrap select:focus {
+  border-color: var(--pink);
+  background: rgba(37, 18, 71, 0.9);
+  box-shadow: 0 0 16px var(--pink-glow);
+}
+.select-wrap select option {
+  background: #1b0c36;
+  color: var(--text);
+}
+.select-chevron {
+  position: absolute;
+  right: 1rem;
+  top: 50%;
+  transform: translateY(-50%);
+  width: 16px; height: 16px;
+  color: var(--text-3);
+  pointer-events: none;
+}
+
+/* ---- User Cards (All Users list) ---- */
+.user-card {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+  padding: 0.95rem 1.1rem;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  background: rgba(27, 12, 54, 0.6);
+  margin-bottom: 0.65rem;
+  transition: all var(--transition);
+  flex-wrap: wrap;
+}
+.user-card:last-child { margin-bottom: 0; }
+.user-card:hover {
+  border-color: var(--border-2);
+  background: rgba(37, 18, 71, 0.75);
+  box-shadow: 0 4px 18px rgba(0,0,0,0.3);
+}
+
+.user-card-left { flex-shrink: 0; }
+
+.user-card-avatar {
+  width: 44px;
+  height: 44px;
+  border-radius: 50%;
+  object-fit: cover;
+  border: 2px solid var(--border);
+  display: block;
+}
+.user-card-avatar--letter {
+  background: linear-gradient(135deg, var(--pink), var(--purple));
+  display: grid;
+  place-items: center;
+  font-size: 1rem;
+  font-weight: 700;
+  color: #fff;
+  box-shadow: 0 0 10px rgba(236, 72, 153, 0.4);
+}
+
+.user-card-info {
+  flex: 1;
+  min-width: 0;
+}
+.user-card-name {
+  font-size: 0.92rem;
+  font-weight: 700;
+  color: var(--text);
+  display: flex;
+  align-items: center;
+  gap: 0.45rem;
+  flex-wrap: wrap;
+  margin-bottom: 0.3rem;
+}
+.user-card-meta {
+  display: flex;
+  gap: 1rem;
+  flex-wrap: wrap;
+  font-size: 0.74rem;
+  color: var(--text-3);
+}
+.user-card-meta span {
+  display: flex;
+  align-items: center;
+  gap: 0.3rem;
+}
+
+.user-card-actions {
+  display: flex;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+  flex-shrink: 0;
+}
+
+@media (max-width: 640px) {
+  .user-card { flex-direction: column; align-items: flex-start; }
+  .user-card-actions { width: 100%; }
+}

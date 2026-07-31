@@ -216,6 +216,15 @@ const KangiService = (function () {
   /* Revoke admin role from a user by email */
   function revokeAdmin(email) { return _callAdminScript('revokeAdmin', { email }); }
 
+  /* Fetch all registered users */
+  function getAllUsers() { return _callAdminScript('getAllUsers', {}); }
+
+  /* Ban a user by email */
+  function banUser(email) { return _callAdminScript('banUser', { email }); }
+
+  /* Unban a user by email */
+  function unbanUser(email) { return _callAdminScript('unbanUser', { email }); }
+
   /* ============================================================
      IMAGE UTIL — resize + compress before storing
      ============================================================ */
@@ -269,7 +278,10 @@ const KangiService = (function () {
     approveSong,
     deleteSong,
     makeAdmin,
-    revokeAdmin
+    revokeAdmin,
+    getAllUsers,
+    banUser,
+    unbanUser
   };
 
 })();

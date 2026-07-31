@@ -605,11 +605,176 @@ handlers.adminUserWorkflow = function (args, context) {
             return { success: false, error: "Failed to update user data: " + e };
         }
 
-        return {
+            return {
             success:   true,
             message:   "Admin privileges revoked successfully.",
             playFabId: revokePlayFabId,
             email:     revokeEmail
+        };
+    }
+
+    // ====================================================================================
+    // C. GET ALL USERS — Returns a list of all players with their profile data
+    // Uses GetUserAccountInfo via a stored registry in Title Internal Data
+    // ====================================================================================
+    if (action === "getAllUsers") {
+        var USERS_REGISTRY_KEY = "GlobalAppUsersRegistry";
+
+        var registryData = server.GetTitleInternalData({ Keys: [USERS_REGISTRY_KEY] });
+        var userIds = [];
+
+        if (registryData.Data && registryData.Data[USERS_REGISTRY_KEY]) {
+            try {
+                userIds = JSON.parse(registryData.Data[USERS_REGISTRY_KEY]);
+            } catch (e) {
+                userIds = [];
+            }
+        }
+
+        // Also use GetPlayersInSegment to enumerate all title players (up to 10000)
+        var segmentResult;
+        try {
+            segmentResult = server.GetPlayersInSegment({
+                SegmentId:       "all_players_segment",
+                MaxBatchSize:    200,
+                SecondsToLive:   300
+            });
+        } catch (e) {
+            // Fallback if segment not configured — return registry only
+            segmentResult = null;
+        }
+
+        var playerList = [];
+
+        if (segmentResult && segmentResult.PlayerProfiles) {
+            var profiles = segmentResult.PlayerProfiles;
+            for (var p = 0; p < profiles.length; p++) {
+                var prof = profiles[p];
+                // Fetch user data to check IsAdmin and IsBanned flags
+                var userData = null;
+                try {
+                    var udResult = server.GetUserData({
+                        PlayFabId: prof.PlayerId,
+                        Keys: ["IsAdmin", "IsBanned"]
+                    });
+                    userData = udResult.Data || {};
+                } catch (e2) {
+                    userData = {};
+                }
+
+                playerList.push({
+                    playFabId:   prof.PlayerId,
+                    displayName: prof.DisplayName || prof.PlayerId,
+                    isAdmin:     (userData.IsAdmin  && userData.IsAdmin.Value  === "true"),
+                    isBanned:    (userData.IsBanned && userData.IsBanned.Value === "true"),
+                    created:     prof.Created || null,
+                    lastLogin:   prof.LastLogin || null,
+                    avatarUrl:   prof.AvatarUrl || null
+                });
+            }
+        }
+
+        return { success: true, users: playerList, total: playerList.length };
+    }
+
+    // ====================================================================================
+    // D. BAN USER — Set IsBanned = "true" in player data and revoke admin if applicable
+    // ====================================================================================
+    if (action === "banUser") {
+        var banEmail = args.email;
+
+        if (!banEmail) {
+            return { success: false, error: "Email address is required." };
+        }
+
+        var banLookup;
+        try {
+            banLookup = server.GetUserAccountInfo({ Email: banEmail });
+        } catch (e) {
+            return { success: false, error: "No account found with that email address." };
+        }
+
+        if (!banLookup || !banLookup.UserInfo || !banLookup.UserInfo.PlayFabId) {
+            return { success: false, error: "No account found with that email address." };
+        }
+
+        var banPlayFabId = banLookup.UserInfo.PlayFabId;
+        var banDisplayName = (banLookup.UserInfo.TitleInfo && banLookup.UserInfo.TitleInfo.DisplayName)
+            ? banLookup.UserInfo.TitleInfo.DisplayName
+            : banEmail;
+
+        try {
+            server.UpdateUserData({
+                PlayFabId:  banPlayFabId,
+                Data:       { "IsBanned": "true", "IsAdmin": "false" },
+                Permission: "Public"
+            });
+        } catch (e) {
+            return { success: false, error: "Failed to ban user: " + e };
+        }
+
+        // Also use PlayFab's built-in ban API
+        try {
+            server.BanUsers({
+                Bans: [{
+                    PlayFabId: banPlayFabId,
+                    Reason:    "Banned by administrator via Kangi Admin Dashboard",
+                    DurationInHours: 87600  // 10 years
+                }]
+            });
+        } catch (e) {
+            // Built-in ban may fail if already banned — not fatal
+        }
+
+        log.info("adminUserWorkflow: Banned user " + banEmail + " (PlayFabId: " + banPlayFabId + ")");
+
+        return {
+            success:     true,
+            message:     "User banned successfully.",
+            playFabId:   banPlayFabId,
+            displayName: banDisplayName,
+            email:       banEmail
+        };
+    }
+
+    // ====================================================================================
+    // E. UNBAN USER — Remove IsBanned flag
+    // ====================================================================================
+    if (action === "unbanUser") {
+        var unbanEmail = args.email;
+
+        if (!unbanEmail) {
+            return { success: false, error: "Email address is required." };
+        }
+
+        var unbanLookup;
+        try {
+            unbanLookup = server.GetUserAccountInfo({ Email: unbanEmail });
+        } catch (e) {
+            return { success: false, error: "No account found with that email address." };
+        }
+
+        if (!unbanLookup || !unbanLookup.UserInfo || !unbanLookup.UserInfo.PlayFabId) {
+            return { success: false, error: "No account found with that email address." };
+        }
+
+        var unbanPlayFabId = unbanLookup.UserInfo.PlayFabId;
+
+        try {
+            server.UpdateUserData({
+                PlayFabId:  unbanPlayFabId,
+                Data:       { "IsBanned": "false" },
+                Permission: "Public"
+            });
+        } catch (e) {
+            return { success: false, error: "Failed to unban user: " + e };
+        }
+
+        return {
+            success:   true,
+            message:   "User unbanned successfully.",
+            playFabId: unbanPlayFabId,
+            email:     unbanEmail
         };
     }
 

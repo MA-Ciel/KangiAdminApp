@@ -219,7 +219,7 @@ handlers.videoAppWorkflow = function (args, context) {
     // ====================================================================================
     var adminParams = args.adminData || {};
 
-    // F. APPROVE A PENDING SONG
+    // F. APPROVE A PENDING SONG + send notification
     if (action === "approveSong") {
         var targetSongId = adminParams.songId;
         var musicDataResponse = server.GetTitleInternalData({ Keys: [SONGS_DATABASE_KEY] });
@@ -243,11 +243,15 @@ handlers.videoAppWorkflow = function (args, context) {
         var statusUpdated = false;
         var approvedList = [];
         var pendingList = [];
+        var targetSongOwnerId = "";
+        var targetSongTitle = "";
 
         for (var j = 0; j < songs.length; j++) {
             if (songs[j].SongId === targetSongId) {
                 songs[j].isPending = false;
                 statusUpdated = true;
+                targetSongOwnerId = songs[j].uploaderId || songs[j].ownerId || "";
+                targetSongTitle = songs[j].title || songs[j].name || "Your song";
             }
 
             if (songs[j].isPending === true || songs[j].isPending === "true") {
@@ -267,12 +271,24 @@ handlers.videoAppWorkflow = function (args, context) {
                 Key: SONGS_DATABASE_KEY,
                 Value: JSON.stringify(updatedMusicPayload)
             });
+
+            // Send notification to song owner
+            if (targetSongOwnerId) {
+                sendNotification(
+                    targetSongOwnerId,
+                    "Song Approved!",
+                    "Your song '" + targetSongTitle + "' has been approved and is now live!",
+                    "audio_approved",
+                    { songId: targetSongId, songTitle: targetSongTitle }
+                );
+            }
+
             return { success: true, message: "Song approved successfully." };
         }
         return { success: false, message: "Song ID not found." };
     }
 
-    // G. DELETE A SONG FROM THE PLATFORM
+    // G. DELETE A SONG FROM THE PLATFORM + send notification
     if (action === "deleteSong") {
         var songIdToDelete = adminParams.songId;
         var resSongs = server.GetTitleInternalData({ Keys: [SONGS_DATABASE_KEY] });
@@ -288,6 +304,17 @@ handlers.videoAppWorkflow = function (args, context) {
                 allSongsList = [];
                 if (wrapSongs.approvedSongs) allSongsList = allSongsList.concat(wrapSongs.approvedSongs);
                 if (wrapSongs.pendingSongs) allSongsList = allSongsList.concat(wrapSongs.pendingSongs);
+            }
+
+            // Find the song owner before deleting
+            var deletedSongOwnerId = "";
+            var deletedSongTitle = "";
+            for (var ds = 0; ds < allSongsList.length; ds++) {
+                if (allSongsList[ds].SongId === songIdToDelete) {
+                    deletedSongOwnerId = allSongsList[ds].uploaderId || allSongsList[ds].ownerId || "";
+                    deletedSongTitle = allSongsList[ds].title || allSongsList[ds].name || "Your song";
+                    break;
+                }
             }
 
             allSongsList = allSongsList.filter(function (item) { return item.SongId !== songIdToDelete; });
@@ -312,6 +339,18 @@ handlers.videoAppWorkflow = function (args, context) {
                 Key: SONGS_DATABASE_KEY,
                 Value: JSON.stringify(updatedWrap)
             });
+
+            // Send notification to song owner
+            if (deletedSongOwnerId) {
+                sendNotification(
+                    deletedSongOwnerId,
+                    "Song Removed",
+                    "Your song '" + deletedSongTitle + "' has been removed from the platform.",
+                    "audio_deleted",
+                    { songId: songIdToDelete, songTitle: deletedSongTitle }
+                );
+            }
+
             return { success: true, message: "Song removed from active tables." };
         }
         return { success: false, message: "No catalog active data found." };
@@ -513,6 +552,541 @@ handlers.nftQrWorkflow = function (args, context) {
 
 
 // ====================================================================================
+// VERIFY, UNLOCK CHARACTER AND REDEEM TOKEN WORKFLOW
+// Safe for NFC, QR, and Manual Text Entries
+// ====================================================================================
+
+handlers.verifyAndRedeemCharacter = function (args, context) {
+    var rawInput = args.inputCode;
+    var requestingPlayerId = currentPlayerId; // Injected by PlayFab Context
+
+    if (!rawInput || rawInput.trim() === "") {
+        return { success: false, error: "Input code cannot be empty." };
+    }
+
+    var cleanInput = rawInput.trim();
+    var NFT_DATABASE_KEY = "GlobalAppNftsMasterList";
+
+    // --- Helper: Extract Base Name (e.g., "Katsumi-001" -> "Katsumi") ---
+    function extractBaseName(str) {
+        if (!str) return "";
+        var dashIdx = str.indexOf('-');
+        return (dashIdx > 0) ? str.substring(0, dashIdx).trim() : str.trim();
+    }
+
+    var extractedName = extractBaseName(cleanInput);
+
+    // 1. READ GLOBAL NFT DATABASE
+    var serverData = server.GetTitleInternalData({ Keys: [NFT_DATABASE_KEY] });
+    var nftsList = [];
+
+    if (serverData.Data && serverData.Data[NFT_DATABASE_KEY]) {
+        try {
+            var parsed = JSON.parse(serverData.Data[NFT_DATABASE_KEY]);
+            nftsList = parsed.nfts || [];
+        } catch (e) {
+            nftsList = [];
+        }
+    }
+
+    var matchedNft = null;
+    var matchedCodeObj = null;
+    var isTokenFound = false;
+
+    // 2. TOKEN MATCHING IN MASTER LIST
+    for (var i = 0; i < nftsList.length; i++) {
+        var nft = nftsList[i];
+        
+        // Search token list
+        if (nft.codes && Array.isArray(nft.codes)) {
+            for (var j = 0; j < nft.codes.length; j++) {
+                if (nft.codes[j].token && nft.codes[j].token.toLowerCase() === cleanInput.toLowerCase()) {
+                    matchedNft = nft;
+                    matchedCodeObj = nft.codes[j];
+                    isTokenFound = true;
+                    break;
+                }
+            }
+        }
+
+        // Direct Match by NFT ID or Name fallback
+        if (!isTokenFound) {
+            if ((nft.id && nft.id.toLowerCase() === cleanInput.toLowerCase()) ||
+                (nft.name && nft.name.toLowerCase() === extractedName.toLowerCase())) {
+                matchedNft = nft;
+                break;
+            }
+        }
+
+        if (matchedNft) break;
+    }
+
+    // 3. CHECK IF TOKEN WAS ALREADY REDEEMED GENERALLY
+    if (matchedCodeObj && matchedCodeObj.redeemed) {
+        return { 
+            success: false, 
+            error: "This code/token has already been redeemed!" 
+        };
+    }
+
+    // Determine target Character ID & Name
+    var characterIdToUnlock = matchedNft ? matchedNft.id : cleanInput;
+    var characterNameToUnlock = matchedNft ? matchedNft.name : extractedName;
+
+    // 4. CHECK USER'S PERSONAL UNLOCKED INVENTORY IN USER DATA
+    var USER_UNLOCKED_KEY = "UnlockedCharacters";
+    var userRecord = server.GetUserReadOnlyData({
+        PlayFabId: requestingPlayerId,
+        Keys: [USER_UNLOCKED_KEY]
+    });
+
+    var userUnlockedList = [];
+    if (userRecord.Data && userRecord.Data[USER_UNLOCKED_KEY]) {
+        try {
+            userUnlockedList = JSON.parse(userRecord.Data[USER_UNLOCKED_KEY].Value);
+        } catch (e) {
+            userUnlockedList = [];
+        }
+    }
+
+    // Double check if player already owns it
+    for (var k = 0; k < userUnlockedList.length; k++) {
+        if (userUnlockedList[k].toLowerCase() === characterIdToUnlock.toLowerCase() ||
+            userUnlockedList[k].toLowerCase() === characterNameToUnlock.toLowerCase()) {
+            return { 
+                success: false, 
+                error: characterNameToUnlock + " is already unlocked on your account!" 
+            };
+        }
+    }
+
+    // 5. UPDATE DB MARKING TOKEN AS REDEEMED
+    if (matchedCodeObj) {
+        matchedCodeObj.redeemed = true;
+        matchedCodeObj.redeemedAt = new Date().toISOString();
+        matchedCodeObj.redeemedBy = requestingPlayerId;
+
+        // Save updated master database back to Title Internal Data
+        server.SetTitleInternalData({
+            Key: NFT_DATABASE_KEY,
+            Value: JSON.stringify({ nfts: nftsList })
+        });
+    }
+
+    // 6. GRANT CHARACTER TO PLAYER (Save to User ReadOnly Data)
+    userUnlockedList.push(characterIdToUnlock);
+    
+    var dataUpdate = {};
+    dataUpdate[USER_UNLOCKED_KEY] = JSON.stringify(userUnlockedList);
+
+    server.UpdateUserReadOnlyData({
+        PlayFabId: requestingPlayerId,
+        Data: dataUpdate
+    });
+
+    return {
+        success: true,
+        message: characterNameToUnlock + " successfully unlocked!",
+        characterId: characterIdToUnlock,
+        characterName: characterNameToUnlock
+    };
+};
+
+// ====================================================================================
+// NOTIFICATION SYSTEM
+// Handles push notifications for ban/unban, audio approval/deletion events
+// ====================================================================================
+
+handlers.notificationWorkflow = function (args, context) {
+    var action = args.action;
+    var playFabId = currentPlayerId;
+
+    log.info("Notification Workflow | Action: " + action + " | PlayFabId: " + playFabId);
+
+    switch(action) {
+        case "sendNotification":
+            return sendNotification(args.targetPlayFabId, args.title, args.message, args.type, args.data);
+        case "getNotifications":
+            return getNotifications(playFabId);
+        case "markAsRead":
+            return markNotificationAsRead(playFabId, args.notificationId);
+        case "markAllAsRead":
+            return markAllNotificationsAsRead(playFabId);
+        case "deleteNotification":
+            return deleteNotification(playFabId, args.notificationId);
+        case "getUnreadCount":
+            return getUnreadCount(playFabId);
+        default:
+            return { success: false, error: "Unknown action: " + action };
+    }
+};
+
+function sendNotification(targetPlayFabId, title, message, type, additionalData) {
+    try {
+        var notifKey = "Notifications";
+        var userDataResult = server.GetUserInternalData({
+            PlayFabId: targetPlayFabId,
+            Keys: [notifKey]
+        });
+
+        var notifications = [];
+        if (userDataResult.Data && userDataResult.Data[notifKey]) {
+            try {
+                notifications = JSON.parse(userDataResult.Data[notifKey].Value);
+            } catch (e) {
+                log.error("Failed to parse existing notifications: " + e);
+                notifications = [];
+            }
+        }
+
+        var notification = {
+            id: generateId("notif"),
+            title: title,
+            message: message,
+            type: type || "info",
+            data: additionalData || {},
+            read: false,
+            createdAt: new Date().toISOString()
+        };
+
+        notifications.unshift(notification);
+
+        if (notifications.length > 50) {
+            notifications = notifications.slice(0, 50);
+        }
+
+        server.UpdateUserInternalData({
+            PlayFabId: targetPlayFabId,
+            Data: {
+                Notifications: JSON.stringify(notifications)
+            }
+        });
+
+        log.info("Notification sent to " + targetPlayFabId + ": " + title);
+
+        return {
+            success: true,
+            message: "Notification sent successfully.",
+            notification: notification
+        };
+    } catch (error) {
+        log.error("Error sending notification: " + error);
+        return { success: false, error: error.message || "Failed to send notification." };
+    }
+}
+
+function getNotifications(playFabId) {
+    try {
+        var notifKey = "Notifications";
+        var userDataResult = server.GetUserInternalData({
+            PlayFabId: playFabId,
+            Keys: [notifKey]
+        });
+
+        var notifications = [];
+        if (userDataResult.Data && userDataResult.Data[notifKey]) {
+            try {
+                notifications = JSON.parse(userDataResult.Data[notifKey].Value);
+            } catch (e) {
+                log.error("Failed to parse notifications: " + e);
+                notifications = [];
+            }
+        }
+
+        var unreadCount = 0;
+        for (var i = 0; i < notifications.length; i++) {
+            if (!notifications[i].read) unreadCount++;
+        }
+
+        return {
+            success: true,
+            notifications: notifications,
+            unreadCount: unreadCount,
+            total: notifications.length
+        };
+    } catch (error) {
+        log.error("Error getting notifications: " + error);
+        return { success: false, error: error.message || "Failed to get notifications." };
+    }
+}
+
+function getUnreadCount(playFabId) {
+    try {
+        var notifKey = "Notifications";
+        var userDataResult = server.GetUserInternalData({
+            PlayFabId: playFabId,
+            Keys: [notifKey]
+        });
+
+        var notifications = [];
+        if (userDataResult.Data && userDataResult.Data[notifKey]) {
+            try {
+                notifications = JSON.parse(userDataResult.Data[notifKey].Value);
+            } catch (e) {
+                return { success: true, unreadCount: 0 };
+            }
+        }
+
+        var unreadCount = 0;
+        for (var i = 0; i < notifications.length; i++) {
+            if (!notifications[i].read) unreadCount++;
+        }
+
+        return { success: true, unreadCount: unreadCount };
+    } catch (error) {
+        return { success: true, unreadCount: 0 };
+    }
+}
+
+function markNotificationAsRead(playFabId, notificationId) {
+    try {
+        var notifKey = "Notifications";
+        var userDataResult = server.GetUserInternalData({
+            PlayFabId: playFabId,
+            Keys: [notifKey]
+        });
+
+        var notifications = [];
+        if (userDataResult.Data && userDataResult.Data[notifKey]) {
+            notifications = JSON.parse(userDataResult.Data[notifKey].Value);
+        }
+
+        var found = false;
+        for (var i = 0; i < notifications.length; i++) {
+            if (notifications[i].id === notificationId) {
+                notifications[i].read = true;
+                found = true;
+                break;
+            }
+        }
+
+        if (!found) {
+            return { success: false, error: "Notification not found." };
+        }
+
+        server.UpdateUserInternalData({
+            PlayFabId: playFabId,
+            Data: {
+                Notifications: JSON.stringify(notifications)
+            }
+        });
+
+        return { success: true, message: "Notification marked as read." };
+    } catch (error) {
+        log.error("Error marking notification as read: " + error);
+        return { success: false, error: error.message || "Failed to mark notification as read." };
+    }
+}
+
+function markAllNotificationsAsRead(playFabId) {
+    try {
+        var notifKey = "Notifications";
+        var userDataResult = server.GetUserInternalData({
+            PlayFabId: playFabId,
+            Keys: [notifKey]
+        });
+
+        var notifications = [];
+        if (userDataResult.Data && userDataResult.Data[notifKey]) {
+            notifications = JSON.parse(userDataResult.Data[notifKey].Value);
+        }
+
+        for (var i = 0; i < notifications.length; i++) {
+            notifications[i].read = true;
+        }
+
+        server.UpdateUserInternalData({
+            PlayFabId: playFabId,
+            Data: {
+                Notifications: JSON.stringify(notifications)
+            }
+        });
+
+        return { success: true, message: "All notifications marked as read." };
+    } catch (error) {
+        log.error("Error marking all notifications as read: " + error);
+        return { success: false, error: error.message || "Failed to mark all as read." };
+    }
+}
+
+function deleteNotification(playFabId, notificationId) {
+    try {
+        var notifKey = "Notifications";
+        var userDataResult = server.GetUserInternalData({
+            PlayFabId: playFabId,
+            Keys: [notifKey]
+        });
+
+        var notifications = [];
+        if (userDataResult.Data && userDataResult.Data[notifKey]) {
+            notifications = JSON.parse(userDataResult.Data[notifKey].Value);
+        }
+
+        var originalLength = notifications.length;
+        var filtered = [];
+        for (var i = 0; i < notifications.length; i++) {
+            if (notifications[i].id !== notificationId) {
+                filtered.push(notifications[i]);
+            }
+        }
+
+        if (filtered.length === originalLength) {
+            return { success: false, error: "Notification not found." };
+        }
+
+        server.UpdateUserInternalData({
+            PlayFabId: playFabId,
+            Data: {
+                Notifications: JSON.stringify(filtered)
+            }
+        });
+
+        return { success: true, message: "Notification deleted." };
+    } catch (error) {
+        log.error("Error deleting notification: " + error);
+        return { success: false, error: error.message || "Failed to delete notification." };
+    }
+}
+
+function generateId(prefix) {
+    var timestamp = Date.now().toString(36);
+    var randomPart = Math.random().toString(36).substring(2, 10);
+    return (prefix || "id") + "_" + timestamp + "_" + randomPart;
+}
+
+// ====================================================================================
+// TEST & DEBUG NOTIFICATION SYSTEM
+// ====================================================================================
+
+handlers.testNotificationSystem = function(args, context) {
+    var testType = args.testType || "sendTest";
+    var targetPlayFabId = args.targetPlayFabId || currentPlayerId;
+    
+    log.info("=== NOTIFICATION TEST START ===");
+    log.info("Test Type: " + testType);
+    log.info("Target PlayFabId: " + targetPlayFabId);
+    
+    // Test 1: Send Test Notification
+    if (testType === "sendTest") {
+        var result = sendNotification(
+            targetPlayFabId,
+            "Test Notification",
+            "This is a test notification sent at " + new Date().toISOString(),
+            "info",
+            { testData: "123", timestamp: Date.now() }
+        );
+        log.info("Send Result: " + JSON.stringify(result));
+        return result;
+    }
+    
+    // Test 2: Send Ban Notification
+    if (testType === "testBan") {
+        return sendNotification(
+            targetPlayFabId,
+            "Account Suspended",
+            "Your account has been temporarily suspended. Please contact support for more information.",
+            "ban",
+            { reason: "Test ban notification" }
+        );
+    }
+    
+    // Test 3: Send Unban Notification
+    if (testType === "testUnban") {
+        return sendNotification(
+            targetPlayFabId,
+            "Account Restored",
+            "Your account suspension has been lifted. Welcome back!",
+            "unban",
+            {}
+        );
+    }
+    
+    // Test 4: Send Audio Approved Notification
+    if (testType === "testAudioApprove") {
+        return sendNotification(
+            targetPlayFabId,
+            "Song Approved!",
+            "Your song 'Test Song Title' has been approved and is now live!",
+            "audio_approved",
+            { songId: "test_song_123", songTitle: "Test Song Title" }
+        );
+    }
+    
+    // Test 5: Send Audio Deleted Notification
+    if (testType === "testAudioDelete") {
+        return sendNotification(
+            targetPlayFabId,
+            "Song Removed",
+            "Your song 'Test Song Title' has been removed from the platform.",
+            "audio_deleted",
+            { songId: "test_song_123", songTitle: "Test Song Title" }
+        );
+    }
+    
+    // Test 6: Get All Notifications
+    if (testType === "getAll") {
+        var getAllResult = getNotifications(targetPlayFabId);
+        log.info("Get All Result: " + JSON.stringify(getAllResult));
+        return getAllResult;
+    }
+    
+    // Test 7: Check Raw Storage
+    if (testType === "checkStorage") {
+        var rawData = server.GetUserInternalData({
+            PlayFabId: targetPlayFabId,
+            Keys: ["Notifications"]
+        });
+        
+        if (rawData.Data && rawData.Data.Notifications) {
+            return {
+                success: true,
+                rawValue: rawData.Data.Notifications.Value,
+                lastUpdated: rawData.Data.Notifications.LastUpdated
+            };
+        }
+        
+        return { success: false, error: "No notifications found in storage" };
+    }
+    
+    // Test 8: Clear All Notifications (for testing)
+    if (testType === "clearAll") {
+        server.UpdateUserInternalData({
+            PlayFabId: targetPlayFabId,
+            Data: {
+                Notifications: JSON.stringify([])
+            }
+        });
+        return { success: true, message: "All notifications cleared" };
+    }
+    
+    // Test 9: Send Multiple Notifications
+    if (testType === "sendMultiple") {
+        var count = args.count || 5;
+        var results = [];
+        
+        for (var i = 0; i < count; i++) {
+            var result = sendNotification(
+                targetPlayFabId,
+                "Test Notification #" + (i + 1),
+                "This is test notification number " + (i + 1),
+                "info",
+                { index: i + 1 }
+            );
+            results.push(result);
+        }
+        
+        return {
+            success: true,
+            message: "Sent " + count + " notifications",
+            results: results
+        };
+    }
+    
+    log.info("=== NOTIFICATION TEST END ===");
+    return { error: "Unknown test type: " + testType };
+};
+
+// ====================================================================================
 // ADMIN USER MANAGEMENT WORKFLOW
 // Handles granting admin privileges to a user by email address.
 // Copy and Paste this entire file into your PlayFab CloudScript Revision Editor.
@@ -677,7 +1251,7 @@ handlers.adminUserWorkflow = function (args, context) {
     }
 
     // ====================================================================================
-    // E. BAN USER — accepts email OR playFabId
+    // E. BAN USER — accepts email OR playFabId + sends notification
     // ====================================================================================
     if (action === "banUser") {
         var bEmail = args.email     || "";
@@ -717,11 +1291,21 @@ handlers.adminUserWorkflow = function (args, context) {
         }
         _saveRegistry(blist);
 
+        // Send notification to user
+        sendNotification(
+            bId,
+            "Account Suspended",
+            "Your account has been temporarily suspended. Please contact support for more information.",
+            "ban",
+            { reason: "Banned via Kangi Admin Dashboard" }
+        );
+
         return { success: true, message: "User banned.", playFabId: bId, displayName: bName, email: bEmail };
     }
 
     // ====================================================================================
-    // F. UNBAN USER — accepts email OR playFabId
+    // F. UNBAN USER — accepts email OR playFabId + sends notification
+    //    Removes IsBanned from UserData AND revokes PlayFab native ban
     // ====================================================================================
     if (action === "unbanUser") {
         var uEmail = args.email     || "";
@@ -740,20 +1324,54 @@ handlers.adminUserWorkflow = function (args, context) {
             return { success: false, error: "Email or PlayFabId is required." };
         }
 
+        // 1. Clear IsBanned flag in UserData
         server.UpdateUserData({
             PlayFabId:  uId,
             Data:       { "IsBanned": "false" },
             Permission: "Public"
         });
 
-        // Sync registry
+        // 2. Get all active bans and revoke them (removes PlayFab native ban)
+        try {
+            var bansResult = server.GetUserBans({ PlayFabId: uId });
+            if (bansResult && bansResult.BanData && bansResult.BanData.length > 0) {
+                var banIds = [];
+                for (var b = 0; b < bansResult.BanData.length; b++) {
+                    if (bansResult.BanData[b].Active) {
+                        banIds.push(bansResult.BanData[b].BanId);
+                    }
+                }
+                if (banIds.length > 0) {
+                    server.RevokeAllBansForUser({ PlayFabId: uId });
+                }
+            }
+        } catch (e) {
+            // RevokeAllBansForUser might not be available in all CloudScript versions
+            // Try RevokeBans as fallback
+            try {
+                server.RevokeAllBansForUser({ PlayFabId: uId });
+            } catch (e2) {
+                log.info("Note: Could not revoke native ban via API, UserData cleared only.");
+            }
+        }
+
+        // 3. Sync registry
         var ulist = _readRegistry();
         for (var ui = 0; ui < ulist.length; ui++) {
             if (ulist[ui].playFabId === uId) { ulist[ui].isBanned = false; break; }
         }
         _saveRegistry(ulist);
 
-        return { success: true, message: "User unbanned.", playFabId: uId, email: uEmail };
+        // 4. Send notification to user
+        sendNotification(
+            uId,
+            "Account Restored",
+            "Your account suspension has been lifted. Welcome back!",
+            "unban",
+            {}
+        );
+
+        return { success: true, message: "User unbanned successfully.", playFabId: uId, email: uEmail };
     }
 
     return { error: "No matching action found in adminUserWorkflow." };

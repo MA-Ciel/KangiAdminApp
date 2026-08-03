@@ -395,6 +395,7 @@ input::placeholder, textarea::placeholder { color: var(--text-3); }
 
 /* ---- Dashboard Grid ---- */
 .dash-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 1.1rem; }
+.dash-grid--single { display: block; }
 
 /* ---- Card ---- */
 .card {
@@ -1749,4 +1750,85 @@ input::placeholder, textarea::placeholder { color: var(--text-3); }
 .user-action-menu-item svg {
   width: 14px;
   height: 14px;
+}
+
+/* ---- Modal Actions Bar (User Details) ---- */
+.modal-actions-bar {
+  padding: 1rem 1.5rem;
+  border-top: 1px solid var(--border);
+  background: rgba(27, 12, 54, 0.6);
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+}
+
+.modal-actions-row {
+  display: flex;
+  gap: 0.6rem;
+  flex-wrap: wrap;
+  align-items: center;
+}
+
+.modal-notif-row {
+  display: flex;
+  gap: 0.6rem;
+  align-items: center;
+}
+
+.modal-notif-row input {
+  flex: 1;
+  padding: 0.55rem 1rem;
+  border-radius: 999px;
+  border: 1px solid var(--border);
+  background: rgba(27, 12, 54, 0.8);
+  font-size: 0.82rem;
+}
+
+.modal-notif-row input:focus {
+  border-color: var(--pink);
+  box-shadow: 0 0 12px var(--pink-glow);
+  outline: none;
+}
+
+/* ---- Ban Dropdown ---- */
+.ban-dropdown-wrap {
+  position: relative;
+}
+
+.ban-dropdown-menu {
+  position: absolute;
+  bottom: calc(100% + 6px);
+  left: 0;
+  background: var(--surface);
+  border: 1px solid var(--border-2);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow-lg);
+  min-width: 170px;
+  z-index: 200;
+  overflow: hidden;
+}
+
+.ban-dropdown-item {
+  display: block;
+  width: 100%;
+  padding: 0.7rem 1rem;
+  font-size: 0.82rem;
+  font-weight: 600;
+  color: var(--text-2);
+  text-align: left;
+  border-bottom: 1px solid var(--border);
+  transition: background var(--transition), color var(--transition);
+}
+
+.ban-dropdown-item:last-child { border-bottom: none; }
+
+.ban-dropdown-item:hover {
+  background: rgba(236, 72, 153, 0.12);
+  color: var(--text);
+}
+
+.ban-dropdown-item--danger { color: var(--red); }
+.ban-dropdown-item--danger:hover {
+  background: rgba(244, 63, 94, 0.15);
+  color: var(--red);
 }

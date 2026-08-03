@@ -178,7 +178,7 @@
             <div class="stat-body"><strong id="statRedeemed">0</strong><span>Redeemed</span></div>
           </div>
         </div>
-        <div class="dash-grid">
+        <div class="dash-grid dash-grid--single">
           <div class="card">
             <div class="card-header"><h3>Recent NFTs</h3></div>
             <div id="recentNftsList" class="card-body">
@@ -186,23 +186,6 @@
                 <svg viewBox="0 0 40 40" fill="none"><rect x="5" y="5" width="30" height="30" rx="6" stroke="currentColor" stroke-width="2"/><path d="M13 27V13h5l7 9V13h5v14h-5L18 18v9h-5Z" fill="currentColor"/></svg>
                 <p>No NFTs yet</p>
               </div>
-            </div>
-          </div>
-          <div class="card">
-            <div class="card-header"><h3>Quick Actions</h3></div>
-            <div class="card-body quick-actions">
-              <button class="action-tile" data-nav="create">
-                <svg viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M10 3a1 1 0 011 1v5h5a1 1 0 110 2h-5v5a1 1 0 11-2 0v-5H4a1 1 0 110-2h5V4a1 1 0 011-1z" clip-rule="evenodd"/></svg>
-                <span>New NFT Batch</span>
-              </button>
-              <button class="action-tile" data-nav="manage">
-                <svg viewBox="0 0 20 20" fill="currentColor"><path d="M3 12v3c0 1.657 3.134 3 7 3s7-1.343 7-3v-3c0 1.657-3.134 3-7 3s-7-1.343-7-3z"/><path d="M3 7v3c0 1.657 3.134 3 7 3s7-1.343 7-3V7c0 1.657-3.134 3-7 3S3 8.657 3 7z"/><path d="M17 5c0 1.657-3.134 3-7 3S3 6.657 3 5s3.134-3 7-3 7 1.343 7 3z"/></svg>
-                <span>Manage Library</span>
-              </button>
-              <button class="action-tile" data-nav="redeem">
-                <svg viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M4 4a2 2 0 00-2 2v4a2 2 0 002 2V6h10a2 2 0 00-2-2H4zm2 6a2 2 0 012-2h8a2 2 0 012 2v4a2 2 0 01-2 2H8a2 2 0 01-2-2v-4zm6 4a2 2 0 100-4 2 2 0 000 4z" clip-rule="evenodd"/></svg>
-                <span>Redeem QR</span>
-              </button>
             </div>
           </div>
         </div>
@@ -284,7 +267,7 @@
               <h3>NFT Library</h3>
               <p>All NFT batches and their unique QR codes.</p>
             </div>
-            <button id="clearAllBtn" class="btn btn-danger btn-sm">
+            <button id="clearAllBtn" class="btn btn-danger btn-sm" style="justify-content:center;">
               <svg viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M9 2a1 1 0 00-.894.553L7.382 4H4a1 1 0 000 2v10a2 2 0 002 2h8a2 2 0 002-2V6a1 1 0 100-2h-3.382l-.724-1.447A1 1 0 0011 2H9zM7 8a1 1 0 012 0v6a1 1 0 11-2 0V8zm5-1a1 1 0 00-1 1v6a1 1 0 102 0V8a1 1 0 00-1-1z" clip-rule="evenodd"/></svg>
               Clear All
             </button>
@@ -355,71 +338,6 @@
       <!-- USER MANAGEMENT -->
       <section id="usersView" class="view">
 
-        <!-- Top row: Grant + Revoke forms side by side -->
-        <div class="user-mgmt-grid">
-
-          <!-- Grant Admin Form -->
-          <div class="card">
-            <div class="card-header">
-              <h3>Grant Admin Access</h3>
-              <p>Enter a user's email address to make them an administrator.</p>
-            </div>
-            <div class="card-body">
-              <div id="userMgmtAlert" class="alert hidden"></div>
-              <form id="makeAdminForm" class="user-mgmt-form" autocomplete="off">
-                <div class="field-group">
-                  <label for="adminTargetEmail">User Email</label>
-                  <div class="input-wrap">
-                    <svg class="input-icon" viewBox="0 0 20 20" fill="currentColor">
-                      <path d="M2.003 5.884L10 9.882l7.997-3.998A2 2 0 0016 4H4a2 2 0 00-1.997 1.884z"/>
-                      <path d="M18 8.118l-8 4-8-4V14a2 2 0 002 2h12a2 2 0 002-2V8.118z"/>
-                    </svg>
-                    <input id="adminTargetEmail" type="email" placeholder="user@example.com" required />
-                  </div>
-                </div>
-                <div class="form-actions">
-                  <button type="submit" id="makeAdminBtn" class="btn btn-primary">
-                    <span class="btn-text">Make Admin</span>
-                    <span class="btn-loader hidden"></span>
-                  </button>
-                </div>
-              </form>
-              <div id="makeAdminResult" class="make-admin-result hidden"></div>
-            </div>
-          </div>
-
-          <!-- Revoke Admin Form -->
-          <div class="card">
-            <div class="card-header">
-              <h3>Revoke Admin Access</h3>
-              <p>Enter a user's email address to remove their administrator privileges.</p>
-            </div>
-            <div class="card-body">
-              <div id="revokeAdminAlert" class="alert hidden"></div>
-              <form id="revokeAdminForm" class="user-mgmt-form" autocomplete="off">
-                <div class="field-group">
-                  <label for="revokeTargetEmail">User Email</label>
-                  <div class="input-wrap">
-                    <svg class="input-icon" viewBox="0 0 20 20" fill="currentColor">
-                      <path d="M2.003 5.884L10 9.882l7.997-3.998A2 2 0 0016 4H4a2 2 0 00-1.997 1.884z"/>
-                      <path d="M18 8.118l-8 4-8-4V14a2 2 0 002 2h12a2 2 0 002-2V8.118z"/>
-                    </svg>
-                    <input id="revokeTargetEmail" type="email" placeholder="user@example.com" required />
-                  </div>
-                </div>
-                <div class="form-actions">
-                  <button type="submit" id="revokeAdminBtn" class="btn btn-danger">
-                    <span class="btn-text">Revoke Admin</span>
-                    <span class="btn-loader hidden"></span>
-                  </button>
-                </div>
-              </form>
-              <div id="revokeAdminResult" class="revoke-admin-result hidden"></div>
-            </div>
-          </div>
-
-        </div>
-
         <!-- All Users List -->
         <div class="card">
           <div class="card-header card-header--between">
@@ -432,19 +350,13 @@
                 <svg class="input-icon" viewBox="0 0 20 20" fill="currentColor">
                   <path fill-rule="evenodd" d="M8 4a4 4 0 100 8 4 4 0 000-8zM2 8a6 6 0 1110.89 3.476l4.817 4.817a1 1 0 01-1.414 1.414l-4.816-4.816A6 6 0 012 8z" clip-rule="evenodd"/>
                 </svg>
-                <input id="userSearchInput" type="text" placeholder="Search users by name, email, or ID..." style="padding-right: 2.5rem;" />
+                <input id="userSearchInput" type="text" placeholder="Search by name, email, or ID..." style="padding-right: 2.5rem;" />
                 <button id="clearSearchBtn" class="btn-icon-ghost" style="position: absolute; right: 8px; top: 50%; transform: translateY(-50%); padding: 4px; display: none;" title="Clear search">
                   <svg viewBox="0 0 20 20" fill="currentColor" style="width:14px;height:14px;">
                     <path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zM8.707 7.293a1 1 0 00-1.414 1.414L8.586 10l-1.293 1.293a1 1 0 101.414 1.414L10 11.414l1.293 1.293a1 1 0 001.414-1.414L11.414 10l1.293-1.293a1 1 0 00-1.414-1.414L10 8.586 8.707 7.293z" clip-rule="evenodd"/>
                   </svg>
                 </button>
               </div>
-              <button id="loadUsersBtn" class="btn btn-secondary btn-sm">
-                <svg viewBox="0 0 20 20" fill="currentColor" style="width:14px;height:14px;">
-                  <path d="M9 6a3 3 0 11-6 0 3 3 0 016 0zM17 6a3 3 0 11-6 0 3 3 0 016 0zM12.93 17c.046-.327.07-.66.07-1a6.97 6.97 0 00-1.5-4.33A5 5 0 0119 16v1h-6.07zM6 11a5 5 0 015 5v1H1v-1a5 5 0 015-5z"/>
-                </svg>
-                Load Users
-              </button>
             </div>
           </div>
           <div class="card-body">
@@ -452,8 +364,8 @@
             <div id="userSearchStats" class="search-stats hidden"></div>
             <div id="usersList">
               <div class="empty-state">
-                <svg viewBox="0 0 20 20" fill="currentColor"><path d="M9 6a3 3 0 11-6 0 3 3 0 016 0zM17 6a3 3 0 11-6 0 3 3 0 016 0zM12.93 17c.046-.327.07-.66.07-1a6.97 6.97 0 00-1.5-4.33A5 5 0 0119 16v1h-6.07zM6 11a5 5 0 015 5v1H1v-1a5 5 0 015-5z"/></svg>
-                <p>Click "Load Users" to fetch all registered players.</p>
+                <div class="btn-loader" style="width:22px;height:22px;border-width:3px;"></div>
+                <p>Loading players…</p>
               </div>
             </div>
           </div>
@@ -502,8 +414,8 @@
             </div>
           </div>
 
-          <!-- Application Preferences -->
-          <div class="card settings-card">
+          <!-- Application Preferences (hidden) -->
+          <div class="card settings-card" style="display:none;">
             <div class="card-header">
               <h3 class="card-title">
                 <svg viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M11.49 3.17c-.38-1.56-2.6-1.56-2.98 0a1.532 1.532 0 01-2.286.948c-1.372-.836-2.942.734-2.106 2.106.54.886.061 2.042-.947 2.287-1.561.379-1.561 2.6 0 2.978a1.532 1.532 0 01.947 2.287c-.836 1.372.734 2.942 2.106 2.106a1.532 1.532 0 012.287.947c.379 1.561 2.6 1.561 2.978 0a1.532 1.532 0 012.287-.947c1.372.836 2.942-.734 2.106-2.106a1.532 1.532 0 01.947-2.287c1.561-.379 1.561-2.6 0-2.978a1.532 1.532 0 01-.947-2.287c.836-1.372-.734-2.942-2.106-2.106a1.532 1.532 0 01-2.287-.947zM10 13a3 3 0 100-6 3 3 0 000 6z" clip-rule="evenodd"/></svg>
@@ -565,6 +477,45 @@
         <p>Loading user details...</p>
       </div>
     </div>
+
+    <!-- Admin Actions toolbar inside the modal -->
+    <div class="modal-actions-bar" id="userModalActionsBar" style="display:none;">
+      <div class="modal-actions-row">
+        <button class="btn btn-ghost btn-sm" id="modalMakeAdminBtn">
+          <svg viewBox="0 0 20 20" fill="currentColor" style="width:13px;height:13px;"><path fill-rule="evenodd" d="M2.166 4.999A11.954 11.954 0 0010 1.944 11.954 11.954 0 0017.834 5c.11.65.166 1.32.166 2.001 0 5.225-3.34 9.67-8 11.317C5.34 16.67 2 12.225 2 7c0-.682.057-1.35.166-2.001zm11.541 3.708a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clip-rule="evenodd"/></svg>
+          Make Admin
+        </button>
+        <button class="btn btn-ghost btn-sm" id="modalRevokeAdminBtn">
+          <svg viewBox="0 0 20 20" fill="currentColor" style="width:13px;height:13px;"><path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zM8.707 7.293a1 1 0 00-1.414 1.414L8.586 10l-1.293 1.293a1 1 0 101.414 1.414L10 11.414l1.293 1.293a1 1 0 001.414-1.414L11.414 10l1.293-1.293a1 1 0 00-1.414-1.414L10 8.586 8.707 7.293z" clip-rule="evenodd"/></svg>
+          Revoke Admin
+        </button>
+        <button class="btn btn-ghost btn-sm" id="modalUnbanBtn">
+          <svg viewBox="0 0 20 20" fill="currentColor" style="width:13px;height:13px;"><path fill-rule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clip-rule="evenodd"/></svg>
+          Unban
+        </button>
+        <div class="ban-dropdown-wrap">
+          <button class="btn btn-danger btn-sm" id="modalBanBtn">
+            <svg viewBox="0 0 20 20" fill="currentColor" style="width:13px;height:13px;"><path fill-rule="evenodd" d="M13.477 14.89A6 6 0 015.11 6.524L13.477 14.89zm1.414-1.414L6.524 5.11a6 6 0 018.367 8.367zM18 10a8 8 0 11-16 0 8 8 0 0116 0z" clip-rule="evenodd"/></svg>
+            Ban ▾
+          </button>
+          <div class="ban-dropdown-menu" id="modalBanDropdown" style="display:none;">
+            <button class="ban-dropdown-item" data-modal-ban="3">Ban 3 Days</button>
+            <button class="ban-dropdown-item" data-modal-ban="7">Ban 7 Days</button>
+            <button class="ban-dropdown-item ban-dropdown-item--danger" data-modal-ban="permanent">Permanent Ban</button>
+          </div>
+        </div>
+      </div>
+      <!-- Send Notification -->
+      <div class="modal-notif-row">
+        <input id="modalNotifInput" type="text" placeholder="Send a custom notification message…" />
+        <button class="btn btn-primary btn-sm" id="modalSendNotifBtn">
+          <svg viewBox="0 0 20 20" fill="currentColor" style="width:13px;height:13px;"><path d="M10.894 2.553a1 1 0 00-1.788 0l-7 14a1 1 0 001.169 1.409l5-1.429A1 1 0 009 15.571V11a1 1 0 112 0v4.571a1 1 0 00.725.962l5 1.428a1 1 0 001.17-1.408l-7-14z"/></svg>
+          Send
+        </button>
+      </div>
+      <div id="modalActionAlert" class="alert hidden" style="margin:0.75rem 0 0;"></div>
+    </div>
+
     <div class="modal-footer" id="userDetailsFooter">
       <button class="btn btn-ghost" id="closeUserModalBtn">Close</button>
     </div>

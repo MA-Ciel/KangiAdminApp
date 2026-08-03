@@ -80,28 +80,27 @@
     soundsAlert:    $('soundsAlert'),
 
     /* User Management */
-    makeAdminForm:      $('makeAdminForm'),
-    adminTargetEmail:   $('adminTargetEmail'),
-    makeAdminBtn:       $('makeAdminBtn'),
-    userMgmtAlert:      $('userMgmtAlert'),
-    makeAdminResult:    $('makeAdminResult'),
-    revokeAdminForm:    $('revokeAdminForm'),
-    revokeTargetEmail:  $('revokeTargetEmail'),
-    revokeAdminBtn:     $('revokeAdminBtn'),
-    revokeAdminAlert:   $('revokeAdminAlert'),
-    revokeAdminResult:  $('revokeAdminResult'),
-    loadUsersBtn:       $('loadUsersBtn'),
     usersAlert:         $('usersAlert'),
     usersList:          $('usersList'),
     userSearchInput:    $('userSearchInput'),
     clearSearchBtn:     $('clearSearchBtn'),
     userSearchStats:    $('userSearchStats'),
-    /* Modals */
+    /* User Details Modal */
     userDetailsModal:   $('userDetailsModal'),
     closeUserModal:     $('closeUserModal'),
     closeUserModalBtn:  $('closeUserModalBtn'),
     userDetailsBody:    $('userDetailsBody'),
     userDetailsFooter:  $('userDetailsFooter'),
+    userModalActionsBar:$('userModalActionsBar'),
+    modalMakeAdminBtn:  $('modalMakeAdminBtn'),
+    modalRevokeAdminBtn:$('modalRevokeAdminBtn'),
+    modalUnbanBtn:      $('modalUnbanBtn'),
+    modalBanBtn:        $('modalBanBtn'),
+    modalBanDropdown:   $('modalBanDropdown'),
+    modalNotifInput:    $('modalNotifInput'),
+    modalSendNotifBtn:  $('modalSendNotifBtn'),
+    modalActionAlert:   $('modalActionAlert'),
+    /* Ban Duration Modal (kept for legacy, no longer used for ban flow) */
     banDurationModal:   $('banDurationModal'),
     closeBanModal:      $('closeBanModal'),
     cancelBanBtn:       $('cancelBanBtn'),
@@ -326,6 +325,9 @@
 
     if (name === 'sounds') {
       await _loadSongsData();
+    }
+    if (name === 'users') {
+      await _loadUsers();
     }
   }
 
@@ -1011,90 +1013,11 @@
   }
 
   /* ================================================================
-     USER MANAGEMENT — Grant admin access via CloudScript
+     USER MANAGEMENT — list only, actions live inside the modal
      ================================================================ */
   function _bindUserManagement() {
-    if (!el.makeAdminForm) return;
-
-    /* ── Load Users button ── */
-    el.loadUsersBtn?.addEventListener('click', _loadUsers);
-
-    /* ── Grant Admin ── */
-    el.makeAdminForm.addEventListener('submit', async (e) => {
-      e.preventDefault();
-      const email = el.adminTargetEmail.value.trim();
-      if (!email) return _alert(el.userMgmtAlert, 'error', 'Please enter an email address.');
-
-      el.makeAdminResult.classList.add('hidden');
-      _setLoading(el.makeAdminBtn, true);
-      _alert(el.userMgmtAlert, 'info', 'Looking up account and granting admin access…');
-
-      try {
-        const res = await KangiService.makeAdmin(email);
-        if (res && res.success) {
-          _hideEl(el.userMgmtAlert);
-          const displayName = res.displayName || email.split('@')[0];
-          el.makeAdminResult.innerHTML = `
-            <div style="display:flex;align-items:center;gap:0.6rem;margin-bottom:0.65rem;">
-              <svg viewBox="0 0 20 20" fill="currentColor" style="width:18px;height:18px;color:#4ade80;flex-shrink:0;"><path fill-rule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clip-rule="evenodd"/></svg>
-              <strong style="font-size:0.9rem;color:#fff;">Admin access granted successfully</strong>
-            </div>
-            <div style="font-size:0.8rem;color:#a7f3d0;line-height:1.7;">
-              <strong style="color:#fff;">User:</strong> ${_esc(displayName)}<br/>
-              <strong style="color:#fff;">Email:</strong> ${_esc(res.email || email)}<br/>
-              <strong style="color:#fff;">PlayFab ID:</strong> ${_esc(res.playFabId || '—')}<br/>
-              <strong style="color:#fff;">Status:</strong> <span style="color:#4ade80;">● IsAdmin = true</span>
-            </div>`;
-          el.makeAdminResult.classList.remove('hidden');
-          el.makeAdminForm.reset();
-          _loadUsers(); /* refresh list */
-        } else {
-          _alert(el.userMgmtAlert, 'error', (res && res.error) || 'Failed to grant admin access.');
-        }
-      } catch (err) {
-        _alert(el.userMgmtAlert, 'error', typeof err === 'string' ? err : (err.message || 'An error occurred.'));
-      } finally {
-        _setLoading(el.makeAdminBtn, false);
-      }
-    });
-
-    /* ── Revoke Admin ── */
-    if (!el.revokeAdminForm) return;
-    el.revokeAdminForm.addEventListener('submit', async (e) => {
-      e.preventDefault();
-      const email = el.revokeTargetEmail.value.trim();
-      if (!email) return _alert(el.revokeAdminAlert, 'error', 'Please enter an email address.');
-      if (!confirm(`Remove admin privileges from "${email}"?\n\nThey will no longer be able to log in to the dashboard.`)) return;
-
-      el.revokeAdminResult.classList.add('hidden');
-      _setLoading(el.revokeAdminBtn, true);
-      _alert(el.revokeAdminAlert, 'info', 'Looking up account and revoking admin access…');
-
-      try {
-        const res = await KangiService.revokeAdmin(email);
-        if (res && res.success) {
-          _hideEl(el.revokeAdminAlert);
-          el.revokeAdminResult.innerHTML = `
-            <div style="display:flex;align-items:center;gap:0.6rem;margin-bottom:0.65rem;">
-              <svg viewBox="0 0 20 20" fill="currentColor" style="width:18px;height:18px;color:#f43f5e;flex-shrink:0;"><path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zM8.707 7.293a1 1 0 00-1.414 1.414L8.586 10l-1.293 1.293a1 1 0 101.414 1.414L10 11.414l1.293 1.293a1 1 0 001.414-1.414L11.414 10l1.293-1.293a1 1 0 00-1.414-1.414L10 8.586 8.707 7.293z" clip-rule="evenodd"/></svg>
-              <strong style="font-size:0.9rem;color:#fff;">Admin access revoked successfully</strong>
-            </div>
-            <div style="font-size:0.8rem;color:#fecaca;line-height:1.7;">
-              <strong style="color:#fff;">Email:</strong> ${_esc(res.email || email)}<br/>
-              <strong style="color:#fff;">Status:</strong> <span style="color:#f43f5e;">● IsAdmin = false</span>
-            </div>`;
-          el.revokeAdminResult.classList.remove('hidden');
-          el.revokeAdminForm.reset();
-          _loadUsers(); /* refresh list */
-        } else {
-          _alert(el.revokeAdminAlert, 'error', (res && res.error) || 'Failed to revoke admin access.');
-        }
-      } catch (err) {
-        _alert(el.revokeAdminAlert, 'error', typeof err === 'string' ? err : (err.message || 'An error occurred.'));
-      } finally {
-        _setLoading(el.revokeAdminBtn, false);
-      }
-    });
+    /* Register card + action click handlers once */
+    _bindUserListClicks();
   }
 
   /* ================================================================
@@ -1109,29 +1032,23 @@
         <p>Loading players from PlayFab…</p>
       </div>`;
 
-    if (el.loadUsersBtn) {
-      el.loadUsersBtn.disabled = true;
-      el.loadUsersBtn.textContent = 'Loading…';
-    }
-
     try {
-      const res = await KangiService.getAllUsers();
+      const res   = await KangiService.getAllUsers();
       const users = (res && Array.isArray(res.users)) ? res.users : [];
-      
-      // Store users in state
-      state.allUsers = users;
+
+      state.allUsers     = users;
       state.filteredUsers = users;
-      
-      // Fetch character data for each user
+
+      /* Fetch character data for each user */
       for (const user of users) {
         try {
-          const userData = await KangiService.getUserCharacters(user.playFabId);
-          user.unlockedCharacters = userData.unlockedCharacters || [];
-        } catch (err) {
+          const ud = await KangiService.getUserCharacters(user.playFabId);
+          user.unlockedCharacters = ud.unlockedCharacters || [];
+        } catch (_) {
           user.unlockedCharacters = [];
         }
       }
-      
+
       _renderUsers(users);
 
       if (el.usersAlert) {
@@ -1141,13 +1058,6 @@
     } catch (err) {
       el.usersList.innerHTML = `<div class="empty-state"><p style="color:var(--red);">Failed to load users: ${_esc(String(err))}</p></div>`;
       if (el.usersAlert) _alert(el.usersAlert, 'error', typeof err === 'string' ? err : 'Could not load users.');
-    } finally {
-      if (el.loadUsersBtn) {
-        el.loadUsersBtn.disabled = false;
-        el.loadUsersBtn.innerHTML = `
-          <svg viewBox="0 0 20 20" fill="currentColor" style="width:14px;height:14px;"><path d="M9 6a3 3 0 11-6 0 3 3 0 016 0zM17 6a3 3 0 11-6 0 3 3 0 016 0zM12.93 17c.046-.327.07-.66.07-1a6.97 6.97 0 00-1.5-4.33A5 5 0 0119 16v1h-6.07zM6 11a5 5 0 015 5v1H1v-1a5 5 0 015-5z"/></svg>
-          Load Users`;
-      }
     }
   }
 
@@ -1158,7 +1068,7 @@
       el.usersList.innerHTML = `
         <div class="empty-state">
           <svg viewBox="0 0 20 20" fill="currentColor"><path d="M9 6a3 3 0 11-6 0 3 3 0 016 0zM17 6a3 3 0 11-6 0 3 3 0 016 0zM12.93 17c.046-.327.07-.66.07-1a6.97 6.97 0 00-1.5-4.33A5 5 0 0119 16v1h-6.07zM6 11a5 5 0 015 5v1H1v-1a5 5 0 015-5z"/></svg>
-          <p>No users found in this title.</p>
+          <p>No users found.</p>
         </div>`;
       return;
     }
@@ -1170,9 +1080,7 @@
       card.dataset.playfabid = user.playFabId;
       card.dataset.user = JSON.stringify(user);
 
-      const initial   = (user.displayName || '?').charAt(0).toUpperCase();
-      const joined    = user.created   ? new Date(user.created).toLocaleDateString()   : '—';
-      const lastLogin = user.lastLogin ? new Date(user.lastLogin).toLocaleDateString() : '—';
+      const initial        = (user.displayName || '?').charAt(0).toUpperCase();
       const characterCount = user.unlockedCharacters ? user.unlockedCharacters.length : 0;
 
       card.innerHTML = `
@@ -1208,74 +1116,25 @@
           </div>
         </div>
         <div class="user-card-actions">
-          ${!user.isAdmin && !user.isBanned && user.email
-            ? `<button class="btn btn-ghost btn-sm user-action-btn" data-uaction="makeAdmin" data-email="${_esc(user.email)}" data-pfid="${_esc(user.playFabId)}" data-name="${_esc(user.displayName || user.email)}">
-                <svg viewBox="0 0 20 20" fill="currentColor" style="width:13px;height:13px;"><path fill-rule="evenodd" d="M2.166 4.999A11.954 11.954 0 0010 1.944 11.954 11.954 0 0017.834 5c.11.65.166 1.32.166 2.001 0 5.225-3.34 9.67-8 11.317C5.34 16.67 2 12.225 2 7c0-.682.057-1.35.166-2.001zm11.541 3.708a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clip-rule="evenodd"/></svg>
-                Make Admin
-              </button>`
-            : ''}
-          ${user.isAdmin && user.email
-            ? `<button class="btn btn-ghost btn-sm user-action-btn" data-uaction="revokeAdmin" data-email="${_esc(user.email)}" data-pfid="${_esc(user.playFabId)}" data-name="${_esc(user.displayName || user.email)}">
-                <svg viewBox="0 0 20 20" fill="currentColor" style="width:13px;height:13px;"><path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zM8.707 7.293a1 1 0 00-1.414 1.414L8.586 10l-1.293 1.293a1 1 0 101.414 1.414L10 11.414l1.293 1.293a1 1 0 001.414-1.414L11.414 10l1.293-1.293a1 1 0 00-1.414-1.414L10 8.586 8.707 7.293z" clip-rule="evenodd"/></svg>
-                Revoke Admin
-              </button>`
-            : ''}
-          ${!user.isBanned && user.email
-            ? `<button class="btn btn-danger btn-sm user-action-btn" data-uaction="ban" data-email="${_esc(user.email)}" data-pfid="${_esc(user.playFabId)}" data-name="${_esc(user.displayName || user.email)}">
-                <svg viewBox="0 0 20 20" fill="currentColor" style="width:13px;height:13px;"><path fill-rule="evenodd" d="M13.477 14.89A6 6 0 015.11 6.524L13.477 14.89zm1.414-1.414L6.524 5.11a6 6 0 018.367 8.367zM18 10a8 8 0 11-16 0 8 8 0 0116 0z" clip-rule="evenodd"/></svg>
-                Ban
-              </button>`
-            : ''}
-          ${user.isBanned && user.email
-            ? `<button class="btn btn-ghost btn-sm user-action-btn" data-uaction="unban" data-email="${_esc(user.email)}" data-pfid="${_esc(user.playFabId)}" data-name="${_esc(user.displayName || user.email)}">
-                <svg viewBox="0 0 20 20" fill="currentColor" style="width:13px;height:13px;"><path fill-rule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clip-rule="evenodd"/></svg>
-                Unban
-              </button>`
-            : ''}
+          <svg viewBox="0 0 20 20" fill="currentColor" style="width:16px;height:16px;color:var(--text-3);flex-shrink:0;">
+            <path fill-rule="evenodd" d="M7.293 14.707a1 1 0 010-1.414L10.586 10 7.293 6.707a1 1 0 011.414-1.414l4 4a1 1 0 010 1.414l-4 4a1 1 0 01-1.414 0z" clip-rule="evenodd"/>
+          </svg>
         </div>`;
 
       el.usersList.appendChild(card);
     });
+  }
 
-    /* ── Delegate action clicks on the list ── */
-    el.usersList.addEventListener('click', async (e) => {
-      const btn = e.target.closest('[data-uaction]');
-      if (!btn || btn.disabled) return;
-
-      const action = btn.dataset.uaction;
-      const email  = btn.dataset.email;
-      const pfid   = btn.dataset.pfid || '';
-      const name   = btn.dataset.name || email;
-
-      if (action === 'ban') {
-        if (!confirm(`Ban "${name}"?\n\nThey will lose all access and their admin status will be removed.`)) return;
-      }
-      if (action === 'revokeAdmin') {
-        if (!confirm(`Revoke admin from "${name}"?`)) return;
-      }
-
-      btn.disabled = true;
-      const origHTML = btn.innerHTML;
-      btn.innerHTML = `<span class="btn-loader" style="width:12px;height:12px;border-width:2px;display:inline-block;"></span>`;
-
+  /* ── User list click delegation — every card click opens the modal ── */
+  function _bindUserListClicks() {
+    if (!el.usersList) return;
+    el.usersList.addEventListener('click', (e) => {
+      const card = e.target.closest('.user-card');
+      if (!card) return;
       try {
-        let res;
-        if (action === 'makeAdmin')   res = await KangiService.makeAdmin(email, pfid);
-        if (action === 'revokeAdmin') res = await KangiService.revokeAdmin(email, pfid);
-        if (action === 'ban')         res = await KangiService.banUser(email, pfid);
-        if (action === 'unban')       res = await KangiService.unbanUser(email, pfid);
-
-        if (res && res.success) {
-          await _loadUsers(); /* refresh full list */
-        } else {
-          btn.disabled = false;
-          btn.innerHTML = origHTML;
-          if (el.usersAlert) _alert(el.usersAlert, 'error', (res && res.error) || 'Action failed.');
-        }
+        _showUserDetails(JSON.parse(card.dataset.user));
       } catch (err) {
-        btn.disabled = false;
-        btn.innerHTML = origHTML;
-        if (el.usersAlert) _alert(el.usersAlert, 'error', typeof err === 'string' ? err : 'Action failed.');
+        console.error('Failed to parse user data:', err);
       }
     });
   }
@@ -1340,71 +1199,184 @@
   }
 
   /* ===================================================================
-     USER MODALS - Details & Ban Duration
+     USER MODALS — Details panel + all actions inside
      =================================================================== */
   function _bindUserModals() {
-    // Close user details modal
-    el.closeUserModal?.addEventListener('click', () => {
+    /* ── Close modal ── */
+    const _closeModal = () => {
       el.userDetailsModal.classList.add('hidden');
+      // close ban dropdown if open
+      if (el.modalBanDropdown) el.modalBanDropdown.style.display = 'none';
+    };
+    el.closeUserModal?.addEventListener('click', _closeModal);
+    el.closeUserModalBtn?.addEventListener('click', _closeModal);
+    el.userDetailsModal?.querySelector('.modal-overlay')?.addEventListener('click', _closeModal);
+
+    /* ── Ban dropdown toggle ── */
+    el.modalBanBtn?.addEventListener('click', (e) => {
+      e.stopPropagation();
+      const isOpen = el.modalBanDropdown.style.display === 'block';
+      el.modalBanDropdown.style.display = isOpen ? 'none' : 'block';
+    });
+    document.addEventListener('click', () => {
+      if (el.modalBanDropdown) el.modalBanDropdown.style.display = 'none';
     });
 
-    el.closeUserModalBtn?.addEventListener('click', () => {
-      el.userDetailsModal.classList.add('hidden');
+    /* ── Make Admin ── */
+    el.modalMakeAdminBtn?.addEventListener('click', async () => {
+      if (!state.selectedUser) return;
+      const { email, playFabId, displayName } = state.selectedUser;
+      if (!confirm(`Grant admin access to "${displayName || email}"?`)) return;
+      await _modalAction(async () => {
+        const res = await KangiService.makeAdmin(email, playFabId);
+        if (res && res.success) {
+          state.selectedUser.isAdmin = true;
+          _modalAlert('success', `✓ Admin granted to ${displayName || email}.`);
+          _updateModalButtons(state.selectedUser);
+          await _loadUsers();
+        } else {
+          _modalAlert('error', (res && res.error) || 'Failed to grant admin.');
+        }
+      });
     });
 
-    el.userDetailsModal?.querySelector('.modal-overlay')?.addEventListener('click', () => {
-      el.userDetailsModal.classList.add('hidden');
+    /* ── Revoke Admin ── */
+    el.modalRevokeAdminBtn?.addEventListener('click', async () => {
+      if (!state.selectedUser) return;
+      const { email, playFabId, displayName } = state.selectedUser;
+      if (!confirm(`Revoke admin from "${displayName || email}"?`)) return;
+      await _modalAction(async () => {
+        const res = await KangiService.revokeAdmin(email, playFabId);
+        if (res && res.success) {
+          state.selectedUser.isAdmin = false;
+          _modalAlert('success', `✓ Admin revoked from ${displayName || email}.`);
+          _updateModalButtons(state.selectedUser);
+          await _loadUsers();
+        } else {
+          _modalAlert('error', (res && res.error) || 'Failed to revoke admin.');
+        }
+      });
     });
 
-    // Close ban duration modal
-    el.closeBanModal?.addEventListener('click', () => {
-      el.banDurationModal.classList.add('hidden');
+    /* ── Unban ── */
+    el.modalUnbanBtn?.addEventListener('click', async () => {
+      if (!state.selectedUser) return;
+      const { email, playFabId, displayName } = state.selectedUser;
+      if (!confirm(`Lift ban on "${displayName || email}"?`)) return;
+      await _modalAction(async () => {
+        const res = await KangiService.unbanUser(email, playFabId);
+        if (res && res.success) {
+          state.selectedUser.isBanned = false;
+          _modalAlert('success', `✓ ${displayName || email} has been unbanned.`);
+          _updateModalButtons(state.selectedUser);
+          await _loadUsers();
+        } else {
+          _modalAlert('error', (res && res.error) || 'Failed to unban user.');
+        }
+      });
     });
 
-    el.cancelBanBtn?.addEventListener('click', () => {
-      el.banDurationModal.classList.add('hidden');
+    /* ── Ban duration options ── */
+    el.modalBanDropdown?.addEventListener('click', async (e) => {
+      const btn = e.target.closest('[data-modal-ban]');
+      if (!btn || !state.selectedUser) return;
+      el.modalBanDropdown.style.display = 'none';
+
+      const duration = btn.dataset.modalBan;
+      const { email, playFabId, displayName } = state.selectedUser;
+      const label = duration === 'permanent' ? 'permanently' : `for ${duration} days`;
+      if (!confirm(`Ban "${displayName || email}" ${label}?`)) return;
+
+      await _modalAction(async () => {
+        const days = duration === 'permanent' ? 0 : parseInt(duration);
+        const res  = await KangiService.banUser(email, playFabId, days);
+        if (res && res.success) {
+          state.selectedUser.isBanned = true;
+          state.selectedUser.isAdmin  = false;
+          _modalAlert('success', `✓ ${displayName || email} banned ${label}.`);
+          _updateModalButtons(state.selectedUser);
+          await _loadUsers();
+        } else {
+          _modalAlert('error', (res && res.error) || 'Ban failed.');
+        }
+      });
     });
 
-    el.banDurationModal?.querySelector('.modal-overlay')?.addEventListener('click', () => {
-      el.banDurationModal.classList.add('hidden');
+    /* ── Send custom notification ── */
+    el.modalSendNotifBtn?.addEventListener('click', async () => {
+      if (!state.selectedUser) return;
+      const msg = el.modalNotifInput?.value.trim();
+      if (!msg) { _modalAlert('error', 'Please type a message first.'); return; }
+
+      await _modalAction(async () => {
+        const res = await KangiService.sendNotification(
+          state.selectedUser.playFabId,
+          'Message from Admin',
+          msg,
+          'info',
+          {}
+        );
+        if (res && res.success) {
+          _modalAlert('success', '✓ Notification sent.');
+          if (el.modalNotifInput) el.modalNotifInput.value = '';
+        } else {
+          _modalAlert('error', (res && res.error) || 'Failed to send notification.');
+        }
+      });
     });
+  }
 
-    // Ban duration button clicks
-    el.banDurationModal?.addEventListener('click', async (e) => {
-      const btn = e.target.closest('.ban-option-btn');
-      if (!btn || !state.banTarget) return;
+  /* Helper — disable all modal action buttons while request runs */
+  async function _modalAction(fn) {
+    const btns = [
+      el.modalMakeAdminBtn, el.modalRevokeAdminBtn,
+      el.modalUnbanBtn, el.modalBanBtn, el.modalSendNotifBtn
+    ].filter(Boolean);
+    btns.forEach(b => { b.disabled = true; });
+    try { await fn(); }
+    finally { btns.forEach(b => { b.disabled = false; }); }
+  }
 
-      const duration = btn.dataset.duration;
-      el.banDurationModal.classList.add('hidden');
+  /* Helper — show alert inside the modal */
+  function _modalAlert(type, text) {
+    if (!el.modalActionAlert) return;
+    _alert(el.modalActionAlert, type, text);
+    setTimeout(() => el.modalActionAlert.classList.add('hidden'), 4000);
+  }
 
-      // Perform ban with duration
-      await _banUserWithDuration(state.banTarget, duration);
-      state.banTarget = null;
-    });
+  /* Helper — show/hide action buttons based on user state */
+  function _updateModalButtons(user) {
+    if (!el.userModalActionsBar) return;
+    el.modalMakeAdminBtn.style.display   = (!user.isAdmin && !user.isBanned && user.email) ? '' : 'none';
+    el.modalRevokeAdminBtn.style.display = (user.isAdmin  && user.email)  ? '' : 'none';
+    el.modalUnbanBtn.style.display       = (user.isBanned && user.email)  ? '' : 'none';
+    el.modalBanBtn.style.display         = (!user.isBanned && user.email) ? '' : 'none';
   }
 
   function _showUserDetails(user) {
     if (!el.userDetailsModal) return;
+    state.selectedUser = user;
 
     el.userDetailsModal.classList.remove('hidden');
     el.userDetailsBody.innerHTML = `
       <div class="loading-spinner">
         <div class="btn-loader"></div>
         <p>Loading user details...</p>
-      </div>
-    `;
+      </div>`;
 
-    // Build user details
-    const initial = (user.displayName || '?').charAt(0).toUpperCase();
-    const unlockedChars = user.unlockedCharacters || [];
-    const allCharacters = ['Katsumi', 'Kiko', 'Bee', 'Chyna'];
+    if (el.userModalActionsBar) el.userModalActionsBar.style.display = 'none';
+    if (el.modalActionAlert)    el.modalActionAlert.classList.add('hidden');
+
+    const initial        = (user.displayName || '?').charAt(0).toUpperCase();
+    const unlockedChars  = user.unlockedCharacters || [];
+    const allCharacters  = ['Katsumi', 'Kiko', 'Bee', 'Chyna'];
 
     setTimeout(() => {
       el.userDetailsBody.innerHTML = `
         <div class="user-detail-header">
           <div class="user-detail-avatar">
-            ${user.avatarUrl 
-              ? `<img src="${_esc(user.avatarUrl)}" alt="${_esc(user.displayName)}" />` 
+            ${user.avatarUrl
+              ? `<img src="${_esc(user.avatarUrl)}" alt="${_esc(user.displayName)}" />`
               : initial
             }
           </div>
@@ -1412,8 +1384,8 @@
             <h4>${_esc(user.displayName || 'Unknown')}</h4>
             <span class="user-detail-email">${_esc(user.email || 'No email')}</span>
             <div class="user-detail-badges">
-              ${user.isAdmin ? '<span class="chip chip--purple">Admin</span>' : ''}
-              ${user.isBanned ? '<span class="chip chip--red">Banned</span>' : '<span class="chip chip--green">Active</span>'}
+              ${user.isAdmin  ? '<span class="chip chip--purple">Admin</span>' : ''}
+              ${user.isBanned ? '<span class="chip chip--red">Banned</span>'   : '<span class="chip chip--green">Active</span>'}
             </div>
           </div>
         </div>
@@ -1458,42 +1430,17 @@
                   <div class="character-icon">${isUnlocked ? '🔓' : '🔒'}</div>
                   <span class="character-name">${_esc(char)}</span>
                   <span class="character-status ${isUnlocked ? 'unlocked' : 'locked'}">${isUnlocked ? 'Unlocked' : 'Locked'}</span>
-                </div>
-              `;
+                </div>`;
             }).join('')}
           </div>
-        </div>
-      `;
-    }, 300);
-  }
+        </div>`;
 
-  function _showBanModal(userName) {
-    if (!el.banDurationModal) return;
-
-    el.banUserName.textContent = `Select ban duration for "${userName}"`;
-    el.banDurationModal.classList.remove('hidden');
-  }
-
-  async function _banUserWithDuration(target, duration) {
-    const { email, pfid, name } = target;
-
-    if (!el.usersAlert) return;
-
-    _alert(el.usersAlert, 'info', `Banning ${name}...`);
-
-    try {
-      let durationDays = duration === 'permanent' ? 0 : parseInt(duration);
-      const res = await KangiService.banUser(email, pfid, durationDays);
-
-      if (res && res.success) {
-        _alert(el.usersAlert, 'success', `${name} has been banned ${duration === 'permanent' ? 'permanently' : `for ${duration} days`}.`);
-        await _loadUsers(); // Refresh list
-      } else {
-        _alert(el.usersAlert, 'error', (res && res.error) || 'Ban failed.');
+      /* Show action bar and set correct button visibility */
+      if (el.userModalActionsBar) {
+        el.userModalActionsBar.style.display = '';
+        _updateModalButtons(user);
       }
-    } catch (err) {
-      _alert(el.usersAlert, 'error', `Ban failed: ${String(err)}`);
-    }
+    }, 250);
   }
 
   /* ── Start ──*/

@@ -237,24 +237,26 @@ const KangiService = (function () {
     }); 
   }
 
-  /* Get user's unlocked characters */
+  /* Get user's unlocked characters from their UserData */
   function getUserCharacters(playFabId) {
-    return new Promise((resolve, reject) => {
-      PlayFabClientApi.GetUserData({
-        PlayFabId: playFabId,
-        Keys: ['UnlockedCharacters']
-      }, (result) => {
-        if (result && result.data && result.data.Data) {
-          const unlockedData = result.data.Data.UnlockedCharacters;
-          const unlockedCharacters = unlockedData ? JSON.parse(unlockedData.Value) : [];
-          resolve({ unlockedCharacters });
-        } else {
-          resolve({ unlockedCharacters: [] });
+    return new Promise((resolve) => {
+      PlayFabClientSDK.GetUserData(
+        { Keys: ['UnlockedCharacters'] },
+        (result, error) => {
+          if (error || !result?.data?.Data) {
+            resolve({ unlockedCharacters: [] });
+            return;
+          }
+          const raw = result.data.Data.UnlockedCharacters?.Value;
+          if (!raw) { resolve({ unlockedCharacters: [] }); return; }
+          try {
+            const parsed = JSON.parse(raw);
+            resolve({ unlockedCharacters: Array.isArray(parsed) ? parsed : [] });
+          } catch (e) {
+            resolve({ unlockedCharacters: [] });
+          }
         }
-      }, (error) => {
-        console.error('Get user characters error:', error);
-        resolve({ unlockedCharacters: [] }); // Don't reject, just return empty
-      });
+      );
     });
   }
 
@@ -299,6 +301,33 @@ const KangiService = (function () {
     return map[code] || msg;
   }
 
+  /* Send a custom notification to a user by PlayFab ID */
+  function sendNotification(targetPlayFabId, title, message, type, data) {
+    return new Promise((resolve, reject) => {
+      PlayFabClientSDK.ExecuteCloudScript(
+        {
+          FunctionName:            'notificationWorkflow',
+          FunctionParameter:       {
+            action:          'sendNotification',
+            targetPlayFabId: targetPlayFabId,
+            title:           title,
+            message:         message,
+            type:            type  || 'info',
+            data:            data  || {}
+          },
+          GeneratePlayStreamEvent: true
+        },
+        (result, error) => {
+          if (error) { reject(_friendlyError(error)); return; }
+          const fn = result?.data?.FunctionResult;
+          if (!fn) { reject('No response from server.'); return; }
+          if (fn.error) { reject(fn.error); return; }
+          resolve(fn);
+        }
+      );
+    });
+  }
+
   /* ── Public API ── */
   return {
     init,
@@ -319,7 +348,8 @@ const KangiService = (function () {
     getAllUsers,
     banUser,
     unbanUser,
-    getUserCharacters
+    getUserCharacters,
+    sendNotification
   };
 
 })();

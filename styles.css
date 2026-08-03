@@ -1832,3 +1832,374 @@ input::placeholder, textarea::placeholder { color: var(--text-3); }
   background: rgba(244, 63, 94, 0.15);
   color: var(--red);
 }
+
+/* ============================================================
+   USER PANEL — Side-drawer profile panel
+   ============================================================ */
+.user-panel {
+  position: fixed !important;
+  top: 0;
+  right: 0;
+  bottom: 0;
+  left: auto !important;
+  width: 420px;
+  max-width: 100vw;
+  max-height: 100vh !important;
+  border-radius: var(--radius-lg) 0 0 var(--radius-lg) !important;
+  display: flex;
+  flex-direction: column;
+  animation: slideInRight 0.3s cubic-bezier(0.16, 1, 0.3, 1) !important;
+  transform: none !important;
+  overflow: hidden;
+}
+
+@keyframes slideInRight {
+  from { opacity: 0; transform: translateX(40px); }
+  to   { opacity: 1; transform: translateX(0); }
+}
+
+/* Header */
+.user-panel-header {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  padding: 1rem 1.25rem;
+  border-bottom: 1px solid var(--border);
+  background: rgba(20, 8, 40, 0.95);
+  flex-shrink: 0;
+}
+
+.user-panel-header-title {
+  font-size: 0.95rem;
+  font-weight: 700;
+  color: var(--text);
+  flex: 1;
+}
+
+/* Scrollable body */
+.user-panel-body {
+  flex: 1;
+  overflow-y: auto;
+  padding: 0;
+  background: var(--surface);
+}
+
+.user-panel-body::-webkit-scrollbar { width: 4px; }
+.user-panel-body::-webkit-scrollbar-track { background: transparent; }
+.user-panel-body::-webkit-scrollbar-thumb { background: var(--border-2); border-radius: 2px; }
+
+/* Hero block */
+.up-hero {
+  background: linear-gradient(135deg, rgba(236,72,153,0.18) 0%, rgba(168,85,247,0.12) 100%);
+  border-bottom: 1px solid var(--border);
+  padding: 1.5rem 1.25rem 1.25rem;
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+}
+
+.up-hero-avatar {
+  width: 64px;
+  height: 64px;
+  border-radius: 50%;
+  background: linear-gradient(135deg, var(--pink), var(--purple));
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 1.6rem;
+  font-weight: 700;
+  color: #fff;
+  flex-shrink: 0;
+  box-shadow: 0 0 20px rgba(236,72,153,0.4);
+  border: 2px solid rgba(236,72,153,0.4);
+}
+
+.up-hero-avatar img {
+  width: 100%;
+  height: 100%;
+  border-radius: 50%;
+  object-fit: cover;
+}
+
+.up-hero-info h3 {
+  font-size: 1.05rem;
+  font-weight: 700;
+  color: var(--text);
+  margin-bottom: 0.2rem;
+}
+
+.up-hero-email {
+  font-size: 0.78rem;
+  color: var(--text-2);
+  margin-bottom: 0.45rem;
+  display: block;
+}
+
+.up-hero-badges {
+  display: flex;
+  gap: 0.4rem;
+  flex-wrap: wrap;
+}
+
+/* Info section */
+.up-section {
+  padding: 1.1rem 1.25rem;
+  border-bottom: 1px solid var(--border);
+}
+
+.up-section-title {
+  font-size: 0.7rem;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--text-3);
+  margin-bottom: 0.75rem;
+}
+
+.up-info-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 0.6rem;
+}
+
+.up-info-item {
+  background: rgba(27, 12, 54, 0.7);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 0.65rem 0.85rem;
+}
+
+.up-info-label {
+  display: block;
+  font-size: 0.68rem;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--text-3);
+  margin-bottom: 0.2rem;
+}
+
+.up-info-value {
+  display: block;
+  font-size: 0.84rem;
+  font-weight: 600;
+  color: var(--text);
+  word-break: break-all;
+}
+
+/* Characters */
+.up-chars-grid {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 0.55rem;
+}
+
+.up-char-card {
+  display: flex;
+  align-items: center;
+  gap: 0.65rem;
+  padding: 0.6rem 0.85rem;
+  border-radius: var(--radius);
+  border: 1px solid var(--border);
+  background: rgba(27, 12, 54, 0.6);
+}
+
+.up-char-card.unlocked {
+  border-color: rgba(74,222,128,0.35);
+  background: rgba(74,222,128,0.07);
+}
+
+.up-char-icon { font-size: 1.1rem; }
+
+.up-char-name {
+  font-size: 0.82rem;
+  font-weight: 600;
+  color: var(--text);
+  flex: 1;
+}
+
+.up-char-badge {
+  font-size: 0.65rem;
+  font-weight: 700;
+  padding: 0.15rem 0.5rem;
+  border-radius: 999px;
+}
+
+.up-char-card.unlocked .up-char-badge {
+  background: rgba(74,222,128,0.2);
+  color: var(--green);
+  border: 1px solid rgba(74,222,128,0.3);
+}
+
+.up-char-card.locked .up-char-badge {
+  background: rgba(255,255,255,0.05);
+  color: var(--text-3);
+  border: 1px solid var(--border);
+}
+
+/* ── Footer action panel ── */
+.user-panel-footer {
+  padding: 1.1rem 1.25rem 1.25rem;
+  border-top: 2px solid var(--border-2);
+  background: rgba(14, 5, 30, 0.97);
+  flex-shrink: 0;
+  max-height: 55vh;
+  overflow-y: auto;
+}
+
+.upf-section-label {
+  font-size: 0.68rem;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--text-3);
+  margin-bottom: 0.6rem;
+}
+
+/* Admin row */
+.upf-row {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 0.55rem;
+}
+
+.upf-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.45rem;
+  padding: 0.6rem 0.9rem;
+  border-radius: 999px;
+  font-size: 0.8rem;
+  font-weight: 600;
+  cursor: pointer;
+  border: none;
+  transition: all var(--transition);
+}
+
+.upf-btn svg { width: 14px; height: 14px; flex-shrink: 0; }
+
+.upf-btn--green {
+  background: rgba(74,222,128,0.15);
+  color: var(--green);
+  border: 1px solid rgba(74,222,128,0.35);
+}
+.upf-btn--green:hover:not(:disabled) {
+  background: rgba(74,222,128,0.25);
+  box-shadow: 0 0 14px rgba(74,222,128,0.25);
+}
+
+.upf-btn--ghost {
+  background: rgba(236,72,153,0.1);
+  color: var(--text-2);
+  border: 1px solid var(--border);
+}
+.upf-btn--ghost:hover:not(:disabled) {
+  background: rgba(236,72,153,0.18);
+  color: var(--text);
+}
+
+.upf-btn--primary {
+  background: var(--primary);
+  color: var(--primary-text);
+  box-shadow: 0 0 14px var(--primary-glow);
+  flex-shrink: 0;
+}
+.upf-btn--primary:hover:not(:disabled) {
+  background: var(--primary-hover);
+  box-shadow: 0 0 22px var(--primary-glow);
+}
+
+/* Ban grid — 3 cards */
+.upf-ban-grid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 0.55rem;
+}
+
+.upf-ban-card {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.3rem;
+  padding: 0.75rem 0.5rem;
+  border-radius: var(--radius);
+  border: 1px solid rgba(244,63,94,0.3);
+  background: rgba(244,63,94,0.07);
+  cursor: pointer;
+  transition: all var(--transition);
+  color: var(--red);
+  text-align: center;
+}
+
+.upf-ban-card svg { width: 20px; height: 20px; }
+.upf-ban-card strong { font-size: 0.82rem; color: var(--text); display: block; }
+.upf-ban-card span   { font-size: 0.67rem; color: var(--text-3); display: block; }
+
+.upf-ban-card:hover:not(:disabled) {
+  border-color: var(--red);
+  background: rgba(244,63,94,0.15);
+  box-shadow: 0 0 16px rgba(244,63,94,0.2);
+  transform: translateY(-2px);
+}
+
+.upf-ban-card--perm {
+  border-color: rgba(244,63,94,0.5);
+  background: rgba(244,63,94,0.12);
+}
+.upf-ban-card--perm:hover:not(:disabled) {
+  background: rgba(244,63,94,0.22);
+  box-shadow: 0 0 20px rgba(244,63,94,0.35);
+}
+
+/* Unban button */
+.upf-unban-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.5rem;
+  width: 100%;
+  margin-top: 0.55rem;
+  padding: 0.65rem;
+  border-radius: 999px;
+  border: 1px solid rgba(74,222,128,0.3);
+  background: rgba(74,222,128,0.08);
+  color: var(--green);
+  font-size: 0.82rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all var(--transition);
+}
+.upf-unban-btn svg { width: 14px; height: 14px; flex-shrink: 0; }
+.upf-unban-btn:hover:not(:disabled) {
+  background: rgba(74,222,128,0.18);
+  box-shadow: 0 0 14px rgba(74,222,128,0.25);
+}
+
+/* Notification input row */
+.upf-notif-row {
+  display: flex;
+  gap: 0.55rem;
+  align-items: center;
+}
+
+.upf-notif-row input {
+  flex: 1;
+  padding: 0.6rem 1rem;
+  border-radius: 999px;
+  border: 1px solid var(--border);
+  background: rgba(27,12,54,0.8);
+  font-size: 0.82rem;
+  color: var(--text);
+  outline: none;
+  transition: all var(--transition);
+}
+.upf-notif-row input:focus {
+  border-color: var(--pink);
+  box-shadow: 0 0 12px var(--pink-glow);
+}
+
+@media (max-width: 480px) {
+  .user-panel { width: 100vw; border-radius: 0 !important; }
+  .upf-ban-grid { grid-template-columns: 1fr 1fr; }
+  .up-info-grid { grid-template-columns: 1fr; }
+}

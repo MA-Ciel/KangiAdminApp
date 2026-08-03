@@ -82,21 +82,19 @@
     /* User Management */
     usersAlert:         $('usersAlert'),
     usersList:          $('usersList'),
+    loadUsersBtn:       $('loadUsersBtn'),
     userSearchInput:    $('userSearchInput'),
     clearSearchBtn:     $('clearSearchBtn'),
     userSearchStats:    $('userSearchStats'),
     /* User Details Modal */
     userDetailsModal:   $('userDetailsModal'),
     closeUserModal:     $('closeUserModal'),
-    closeUserModalBtn:  $('closeUserModalBtn'),
     userDetailsBody:    $('userDetailsBody'),
     userDetailsFooter:  $('userDetailsFooter'),
     userModalActionsBar:$('userModalActionsBar'),
     modalMakeAdminBtn:  $('modalMakeAdminBtn'),
     modalRevokeAdminBtn:$('modalRevokeAdminBtn'),
     modalUnbanBtn:      $('modalUnbanBtn'),
-    modalBanBtn:        $('modalBanBtn'),
-    modalBanDropdown:   $('modalBanDropdown'),
     modalNotifInput:    $('modalNotifInput'),
     modalSendNotifBtn:  $('modalSendNotifBtn'),
     modalActionAlert:   $('modalActionAlert'),
@@ -949,6 +947,7 @@
       el.refreshBtn.style.animation = 'spin 0.65s linear';
       await _loadAllData();
       await _loadSongsData();
+      await _loadUsers();
       setTimeout(() => el.refreshBtn.style.animation = '', 700);
     });
   }
@@ -1016,7 +1015,9 @@
      USER MANAGEMENT — list only, actions live inside the modal
      ================================================================ */
   function _bindUserManagement() {
-    /* Register card + action click handlers once */
+    /* Load Users button */
+    el.loadUsersBtn?.addEventListener('click', _loadUsers);
+    /* Register card click handlers once */
     _bindUserListClicks();
   }
 
@@ -1202,25 +1203,12 @@
      USER MODALS — Details panel + all actions inside
      =================================================================== */
   function _bindUserModals() {
-    /* ── Close modal ── */
+    /* ── Close panel ── */
     const _closeModal = () => {
       el.userDetailsModal.classList.add('hidden');
-      // close ban dropdown if open
-      if (el.modalBanDropdown) el.modalBanDropdown.style.display = 'none';
     };
     el.closeUserModal?.addEventListener('click', _closeModal);
-    el.closeUserModalBtn?.addEventListener('click', _closeModal);
     el.userDetailsModal?.querySelector('.modal-overlay')?.addEventListener('click', _closeModal);
-
-    /* ── Ban dropdown toggle ── */
-    el.modalBanBtn?.addEventListener('click', (e) => {
-      e.stopPropagation();
-      const isOpen = el.modalBanDropdown.style.display === 'block';
-      el.modalBanDropdown.style.display = isOpen ? 'none' : 'block';
-    });
-    document.addEventListener('click', () => {
-      if (el.modalBanDropdown) el.modalBanDropdown.style.display = 'none';
-    });
 
     /* ── Make Admin ── */
     el.modalMakeAdminBtn?.addEventListener('click', async () => {
@@ -1276,13 +1264,12 @@
       });
     });
 
-    /* ── Ban duration options ── */
-    el.modalBanDropdown?.addEventListener('click', async (e) => {
-      const btn = e.target.closest('[data-modal-ban]');
-      if (!btn || !state.selectedUser) return;
-      el.modalBanDropdown.style.display = 'none';
+    /* ── Ban cards (3 days / 7 days / permanent) ── */
+    el.userModalActionsBar?.addEventListener('click', async (e) => {
+      const card = e.target.closest('[data-modal-ban]');
+      if (!card || !state.selectedUser) return;
 
-      const duration = btn.dataset.modalBan;
+      const duration = card.dataset.modalBan;
       const { email, playFabId, displayName } = state.selectedUser;
       const label = duration === 'permanent' ? 'permanently' : `for ${duration} days`;
       if (!confirm(`Ban "${displayName || email}" ${label}?`)) return;
@@ -1302,7 +1289,7 @@
       });
     });
 
-    /* ── Send custom notification ── */
+    /* ── Send notification ── */
     el.modalSendNotifBtn?.addEventListener('click', async () => {
       if (!state.selectedUser) return;
       const msg = el.modalNotifInput?.value.trim();
@@ -1326,11 +1313,13 @@
     });
   }
 
-  /* Helper — disable all modal action buttons while request runs */
   async function _modalAction(fn) {
     const btns = [
       el.modalMakeAdminBtn, el.modalRevokeAdminBtn,
-      el.modalUnbanBtn, el.modalBanBtn, el.modalSendNotifBtn
+      el.modalUnbanBtn, el.modalSendNotifBtn,
+      ...(el.userModalActionsBar
+          ? [...el.userModalActionsBar.querySelectorAll('[data-modal-ban]')]
+          : [])
     ].filter(Boolean);
     btns.forEach(b => { b.disabled = true; });
     try { await fn(); }
@@ -1344,13 +1333,24 @@
     setTimeout(() => el.modalActionAlert.classList.add('hidden'), 4000);
   }
 
-  /* Helper — show/hide action buttons based on user state */
   function _updateModalButtons(user) {
     if (!el.userModalActionsBar) return;
+
+    // Admin buttons
     el.modalMakeAdminBtn.style.display   = (!user.isAdmin && !user.isBanned && user.email) ? '' : 'none';
-    el.modalRevokeAdminBtn.style.display = (user.isAdmin  && user.email)  ? '' : 'none';
-    el.modalUnbanBtn.style.display       = (user.isBanned && user.email)  ? '' : 'none';
-    el.modalBanBtn.style.display         = (!user.isBanned && user.email) ? '' : 'none';
+    el.modalRevokeAdminBtn.style.display = (user.isAdmin  && user.email) ? '' : 'none';
+
+    // Ban / unban
+    const canBan   = !user.isBanned && user.email;
+    const canUnban = user.isBanned  && user.email;
+
+    // Show/hide the whole ban grid
+    const banGrid = el.userModalActionsBar.querySelector('.upf-ban-grid');
+    const banLabel = el.userModalActionsBar.querySelectorAll('.upf-section-label')[1];
+    if (banGrid)  banGrid.style.display  = canBan ? '' : 'none';
+    if (banLabel) banLabel.style.display = canBan ? '' : 'none';
+
+    el.modalUnbanBtn.style.display = canUnban ? '' : 'none';
   }
 
   function _showUserDetails(user) {
@@ -1361,86 +1361,86 @@
     el.userDetailsBody.innerHTML = `
       <div class="loading-spinner">
         <div class="btn-loader"></div>
-        <p>Loading user details...</p>
+        <p>Loading...</p>
       </div>`;
 
     if (el.userModalActionsBar) el.userModalActionsBar.style.display = 'none';
     if (el.modalActionAlert)    el.modalActionAlert.classList.add('hidden');
 
-    const initial        = (user.displayName || '?').charAt(0).toUpperCase();
-    const unlockedChars  = user.unlockedCharacters || [];
-    const allCharacters  = ['Katsumi', 'Kiko', 'Bee', 'Chyna'];
+    const initial       = (user.displayName || '?').charAt(0).toUpperCase();
+    const unlockedChars = user.unlockedCharacters || [];
+    const allCharacters = ['Katsumi', 'Kiko', 'Bee', 'Chyna'];
 
     setTimeout(() => {
       el.userDetailsBody.innerHTML = `
-        <div class="user-detail-header">
-          <div class="user-detail-avatar">
-            ${user.avatarUrl
-              ? `<img src="${_esc(user.avatarUrl)}" alt="${_esc(user.displayName)}" />`
-              : initial
-            }
+        <!-- Hero -->
+        <div class="up-hero">
+          <div class="up-hero-avatar">
+            ${user.avatarUrl ? `<img src="${_esc(user.avatarUrl)}" alt="${_esc(user.displayName)}" />` : initial}
           </div>
-          <div class="user-detail-info">
-            <h4>${_esc(user.displayName || 'Unknown')}</h4>
-            <span class="user-detail-email">${_esc(user.email || 'No email')}</span>
-            <div class="user-detail-badges">
-              ${user.isAdmin  ? '<span class="chip chip--purple">Admin</span>' : ''}
-              ${user.isBanned ? '<span class="chip chip--red">Banned</span>'   : '<span class="chip chip--green">Active</span>'}
+          <div class="up-hero-info">
+            <h3>${_esc(user.displayName || 'Unknown')}</h3>
+            <span class="up-hero-email">${_esc(user.email || 'No email')}</span>
+            <div class="up-hero-badges">
+              ${user.isAdmin  ? '<span class="chip chip--purple">Admin</span>'  : ''}
+              ${user.isBanned ? '<span class="chip chip--red">Banned</span>'    : '<span class="chip chip--green">Active</span>'}
             </div>
           </div>
         </div>
 
-        <div class="detail-section">
-          <h5>Account Information</h5>
-          <div class="detail-grid">
-            <div class="detail-item">
-              <span class="detail-item-label">PlayFab ID</span>
-              <span class="detail-item-value">${_esc(user.playFabId)}</span>
+        <!-- Account info -->
+        <div class="up-section">
+          <div class="up-section-title">Account Information</div>
+          <div class="up-info-grid">
+            <div class="up-info-item">
+              <span class="up-info-label">PlayFab ID</span>
+              <span class="up-info-value">${_esc(user.playFabId)}</span>
             </div>
-            <div class="detail-item">
-              <span class="detail-item-label">Display Name</span>
-              <span class="detail-item-value">${_esc(user.displayName || 'Not set')}</span>
+            <div class="up-info-item">
+              <span class="up-info-label">Display Name</span>
+              <span class="up-info-value">${_esc(user.displayName || '—')}</span>
             </div>
-            <div class="detail-item">
-              <span class="detail-item-label">Email</span>
-              <span class="detail-item-value">${_esc(user.email || 'Not set')}</span>
+            <div class="up-info-item">
+              <span class="up-info-label">Email</span>
+              <span class="up-info-value">${_esc(user.email || '—')}</span>
             </div>
-            <div class="detail-item">
-              <span class="detail-item-label">Created</span>
-              <span class="detail-item-value">${user.created ? new Date(user.created).toLocaleDateString() : '—'}</span>
+            <div class="up-info-item">
+              <span class="up-info-label">Account Status</span>
+              <span class="up-info-value">${user.isBanned ? '🔴 Banned' : '🟢 Active'}</span>
             </div>
-            <div class="detail-item">
-              <span class="detail-item-label">Last Login</span>
-              <span class="detail-item-value">${user.lastLogin ? new Date(user.lastLogin).toLocaleDateString() : 'Never'}</span>
+            <div class="up-info-item">
+              <span class="up-info-label">Joined</span>
+              <span class="up-info-value">${user.created ? new Date(user.created).toLocaleDateString() : '—'}</span>
             </div>
-            <div class="detail-item">
-              <span class="detail-item-label">Status</span>
-              <span class="detail-item-value">${user.isBanned ? '🔴 Banned' : '🟢 Active'}</span>
+            <div class="up-info-item">
+              <span class="up-info-label">Last Login</span>
+              <span class="up-info-value">${user.lastLogin ? new Date(user.lastLogin).toLocaleDateString() : 'Never'}</span>
             </div>
           </div>
         </div>
 
-        <div class="detail-section">
-          <h5>Unlocked Characters (${unlockedChars.length}/${allCharacters.length})</h5>
-          <div class="characters-list">
+        <!-- Characters -->
+        <div class="up-section">
+          <div class="up-section-title">Unlocked Characters (${unlockedChars.length} / ${allCharacters.length})</div>
+          <div class="up-chars-grid">
             ${allCharacters.map(char => {
               const isUnlocked = unlockedChars.includes(char);
               return `
-                <div class="character-card ${isUnlocked ? 'unlocked' : 'locked'}">
-                  <div class="character-icon">${isUnlocked ? '🔓' : '🔒'}</div>
-                  <span class="character-name">${_esc(char)}</span>
-                  <span class="character-status ${isUnlocked ? 'unlocked' : 'locked'}">${isUnlocked ? 'Unlocked' : 'Locked'}</span>
+                <div class="up-char-card ${isUnlocked ? 'unlocked' : 'locked'}">
+                  <span class="up-char-icon">${isUnlocked ? '🔓' : '🔒'}</span>
+                  <span class="up-char-name">${_esc(char)}</span>
+                  <span class="up-char-badge">${isUnlocked ? 'Unlocked' : 'Locked'}</span>
                 </div>`;
             }).join('')}
           </div>
         </div>`;
 
-      /* Show action bar and set correct button visibility */
+      /* Show action footer */
       if (el.userModalActionsBar) {
         el.userModalActionsBar.style.display = '';
         _updateModalButtons(user);
       }
-    }, 250);
+    }, 220);
   }
 
   /* ── Start ──*/

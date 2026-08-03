@@ -2203,3 +2203,40 @@ input::placeholder, textarea::placeholder { color: var(--text-3); }
   .upf-ban-grid { grid-template-columns: 1fr 1fr; }
   .up-info-grid { grid-template-columns: 1fr; }
 }
+
+/* ---- Character card with NFT image ---- */
+.up-char-card {
+  display: flex;
+  align-items: center;
+  gap: 0.65rem;
+  padding: 0.6rem 0.85rem;
+  border-radius: var(--radius);
+  border: 1px solid var(--border);
+  background: rgba(27, 12, 54, 0.6);
+}
+
+.up-char-img {
+  width: 38px;
+  height: 38px;
+  border-radius: 8px;
+  object-fit: cover;
+  border: 1px solid var(--border);
+  flex-shrink: 0;
+  box-shadow: 0 0 8px rgba(0,0,0,0.4);
+}
+
+.up-char-details {
+  display: flex;
+  flex-direction: column;
+  gap: 0.15rem;
+  min-width: 0;
+  flex: 1;
+}
+
+.up-char-nft-name {
+  font-size: 0.65rem;
+  color: var(--text-3);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}

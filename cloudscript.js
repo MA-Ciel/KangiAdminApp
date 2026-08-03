@@ -689,9 +689,9 @@ handlers.verifyAndRedeemCharacter = function (args, context) {
     var characterIdToUnlock = matchedNft ? matchedNft.id : cleanInput;
     var characterNameToUnlock = matchedNft ? matchedNft.name : extractedName;
 
-    // 4. CHECK USER'S PERSONAL UNLOCKED INVENTORY IN USER DATA
+    // 4. CHECK USER'S PERSONAL UNLOCKED INVENTORY IN USER DATA (regular PlayerData)
     var USER_UNLOCKED_KEY = "UnlockedCharacters";
-    var userRecord = server.GetUserReadOnlyData({
+    var userRecord = server.GetUserData({
         PlayFabId: requestingPlayerId,
         Keys: [USER_UNLOCKED_KEY]
     });
@@ -729,15 +729,16 @@ handlers.verifyAndRedeemCharacter = function (args, context) {
         });
     }
 
-    // 6. GRANT CHARACTER TO PLAYER (Save to User ReadOnly Data)
+    // 6. GRANT CHARACTER TO PLAYER (Save to regular UserData — Public so admin can read it)
     userUnlockedList.push(characterIdToUnlock);
     
     var dataUpdate = {};
     dataUpdate[USER_UNLOCKED_KEY] = JSON.stringify(userUnlockedList);
 
-    server.UpdateUserReadOnlyData({
+    server.UpdateUserData({
         PlayFabId: requestingPlayerId,
-        Data: dataUpdate
+        Data: dataUpdate,
+        Permission: "Public"
     });
 
     return {
@@ -1468,6 +1469,35 @@ handlers.adminUserWorkflow = function (args, context) {
         );
 
         return { success: true, message: "User unbanned successfully.", playFabId: uId, email: uEmail };
+    }
+
+    // ====================================================================================
+    // G. GET PLAYER CHARACTERS — Read UnlockedCharacters from regular UserData
+    // ====================================================================================
+    if (action === "getPlayerCharacters") {
+        var gcPfId = args.playFabId || "";
+        if (!gcPfId) return { success: false, unlockedCharacters: [], error: "playFabId required." };
+
+        try {
+            var gcResult = server.GetUserData({
+                PlayFabId: gcPfId,
+                Keys: ["UnlockedCharacters"]
+            });
+
+            var raw = "";
+            if (gcResult.Data && gcResult.Data["UnlockedCharacters"]) {
+                raw = gcResult.Data["UnlockedCharacters"].Value || "";
+            }
+
+            var chars = [];
+            if (raw) {
+                try { chars = JSON.parse(raw); } catch (e) { chars = []; }
+            }
+
+            return { success: true, unlockedCharacters: Array.isArray(chars) ? chars : [] };
+        } catch (e) {
+            return { success: false, unlockedCharacters: [], error: e.message || "Failed to read player data." };
+        }
     }
 
     return { error: "No matching action found in adminUserWorkflow." };

@@ -1011,6 +1011,29 @@
     return `<svg viewBox="0 0 40 40" fill="none"><rect x="5" y="5" width="30" height="30" rx="6" stroke="currentColor" stroke-width="2"/><path d="M13 27V13h5l7 9V13h5v14h-5L18 18v9h-5Z" fill="currentColor"/></svg>`;
   }
 
+  /* ── Resolve raw NFT IDs / tokens → human-readable character names ──
+     The game stores NFT IDs like "COL-MSA..." in UnlockedCharacters.
+     We match against the loaded NFT library; if no match we keep the value as-is. */
+  function _resolveCharacterNames(rawIds) {
+    if (!rawIds || !rawIds.length) return [];
+    return rawIds.map(id => {
+      // Check if it already looks like a plain character name
+      const knownNames = ['Katsumi', 'Kiko', 'Bee', 'Chyna'];
+      if (knownNames.some(n => n.toLowerCase() === String(id).toLowerCase())) return id;
+      // Try to match against NFT library by id or name prefix
+      const nft = (state.nfts || []).find(n =>
+        n.id === id ||
+        n.id?.toLowerCase() === String(id).toLowerCase() ||
+        String(id).toLowerCase().startsWith(n.name?.split(' ')[0]?.toLowerCase() || '___')
+      );
+      if (nft) {
+        // Extract base character name from nft.name (e.g. "Katsumi — Shiny Edition" → "Katsumi")
+        return nft.name.split('—')[0].trim().split(' ')[0];
+      }
+      return id; // fallback: show raw id
+    });
+  }
+
   /* ================================================================
      USER MANAGEMENT — list only, actions live inside the modal
      ================================================================ */
@@ -1040,13 +1063,18 @@
       state.allUsers     = users;
       state.filteredUsers = users;
 
-      /* Fetch character data for each user */
+      /* Fetch character data for each user — resolve NFT IDs to character names */
       for (const user of users) {
         try {
           const ud = await KangiService.getUserCharacters(user.playFabId);
-          user.unlockedCharacters = ud.unlockedCharacters || [];
+          const rawIds = ud.unlockedCharacters || [];
+          // rawIds may be NFT collection IDs (COL-...) or plain names
+          // Resolve against the loaded NFT library
+          user.unlockedCharacters     = rawIds;
+          user.unlockedCharacterNames = _resolveCharacterNames(rawIds);
         } catch (_) {
-          user.unlockedCharacters = [];
+          user.unlockedCharacters     = [];
+          user.unlockedCharacterNames = [];
         }
       }
 
@@ -1082,7 +1110,7 @@
       card.dataset.user = JSON.stringify(user);
 
       const initial        = (user.displayName || '?').charAt(0).toUpperCase();
-      const characterCount = user.unlockedCharacters ? user.unlockedCharacters.length : 0;
+      const characterCount = (user.unlockedCharacterNames || user.unlockedCharacters || []).length;
 
       card.innerHTML = `
         <div class="user-card-left">
@@ -1368,7 +1396,8 @@
     if (el.modalActionAlert)    el.modalActionAlert.classList.add('hidden');
 
     const initial       = (user.displayName || '?').charAt(0).toUpperCase();
-    const unlockedChars = user.unlockedCharacters || [];
+    const unlockedChars = user.unlockedCharacters     || [];
+    const unlockedNames = user.unlockedCharacterNames || unlockedChars;
     const allCharacters = ['Katsumi', 'Kiko', 'Bee', 'Chyna'];
 
     setTimeout(() => {
@@ -1421,15 +1450,30 @@
 
         <!-- Characters -->
         <div class="up-section">
-          <div class="up-section-title">Unlocked Characters (${unlockedChars.length} / ${allCharacters.length})</div>
+          <div class="up-section-title">Unlocked Characters (${unlockedNames.length} / ${allCharacters.length})</div>
           <div class="up-chars-grid">
             ${allCharacters.map(char => {
-              const isUnlocked = unlockedChars.includes(char);
+              const isUnlocked = unlockedNames.some(n =>
+                n.toLowerCase() === char.toLowerCase() ||
+                n.toLowerCase().startsWith(char.toLowerCase())
+              );
+              // Find matching NFT for image
+              const matchedNft = isUnlocked
+                ? (state.nfts || []).find(n =>
+                    n.name?.toLowerCase().startsWith(char.toLowerCase())
+                  )
+                : null;
               return `
                 <div class="up-char-card ${isUnlocked ? 'unlocked' : 'locked'}">
-                  <span class="up-char-icon">${isUnlocked ? '🔓' : '🔒'}</span>
-                  <span class="up-char-name">${_esc(char)}</span>
-                  <span class="up-char-badge">${isUnlocked ? 'Unlocked' : 'Locked'}</span>
+                  ${matchedNft
+                    ? `<img src="${matchedNft.image}" alt="${_esc(char)}" class="up-char-img" />`
+                    : `<span class="up-char-icon">${isUnlocked ? '🔓' : '🔒'}</span>`
+                  }
+                  <div class="up-char-details">
+                    <span class="up-char-name">${_esc(char)}</span>
+                    ${matchedNft ? `<span class="up-char-nft-name">${_esc(matchedNft.name)}</span>` : ''}
+                    <span class="up-char-badge">${isUnlocked ? 'Unlocked' : 'Locked'}</span>
+                  </div>
                 </div>`;
             }).join('')}
           </div>

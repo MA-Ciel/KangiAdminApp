@@ -237,24 +237,24 @@ const KangiService = (function () {
     }); 
   }
 
-  /* Get user's unlocked characters from their UserData */
+  /* Get user's unlocked characters from their regular UserData (Player Data).
+     Uses a CloudScript call so we can read another player's data server-side.
+     Returns raw NFT IDs — the caller resolves names using the NFT library.   */
   function getUserCharacters(playFabId) {
     return new Promise((resolve) => {
-      PlayFabClientSDK.GetUserData(
-        { Keys: ['UnlockedCharacters'] },
+      PlayFabClientSDK.ExecuteCloudScript(
+        {
+          FunctionName:       'adminUserWorkflow',
+          FunctionParameter:  { action: 'getPlayerCharacters', playFabId: playFabId || '' },
+          GeneratePlayStreamEvent: false
+        },
         (result, error) => {
-          if (error || !result?.data?.Data) {
+          if (error || !result?.data?.FunctionResult) {
             resolve({ unlockedCharacters: [] });
             return;
           }
-          const raw = result.data.Data.UnlockedCharacters?.Value;
-          if (!raw) { resolve({ unlockedCharacters: [] }); return; }
-          try {
-            const parsed = JSON.parse(raw);
-            resolve({ unlockedCharacters: Array.isArray(parsed) ? parsed : [] });
-          } catch (e) {
-            resolve({ unlockedCharacters: [] });
-          }
+          const fn = result.data.FunctionResult;
+          resolve({ unlockedCharacters: Array.isArray(fn.unlockedCharacters) ? fn.unlockedCharacters : [] });
         }
       );
     });

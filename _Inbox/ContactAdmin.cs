@@ -7,26 +7,21 @@ using PlayFab.ClientModels;
 /// <summary>
 /// ContactAdmin
 /// ─────────────────────────────────────────────────────────────
-/// Attach to a Canvas GameObject. Wire up 3 fields in Inspector:
-///
-///   messageInput  — TMP_InputField   (the text box)
-///   sendButton    — Button           (Send button)
-///   statusText    — TextMeshProUGUI  (feedback label, can be null)
-///
-/// What it does:
-///   • User types a message → hits Send
-///   • Message is stored server-side via PlayFab CloudScript
-///   • Admin sees it in the web dashboard Messages tab
-///   • Admin can reply; the reply arrives as a Notification in-game
+/// Wire in Inspector:
+///   messageInput   TMP_InputField   — the text box
+///   sendButton     Button           — Send button
+///   statusText     TextMeshProUGUI  — optional feedback label
+///   inboxViewer    InboxViewer      — optional: auto-refreshes list after send
 /// </summary>
 public class ContactAdmin : MonoBehaviour
 {
-    [Header("UI References")]
+    [Header("UI")]
     [SerializeField] private TMP_InputField  messageInput;
     [SerializeField] private Button          sendButton;
     [SerializeField] private TextMeshProUGUI statusText;
 
-    // ── Lifecycle ─────────────────────────────────────────────
+    [Header("Optional — refresh inbox after send")]
+    [SerializeField] private InboxViewer inboxViewer;
 
     void Start()
     {
@@ -34,7 +29,7 @@ public class ContactAdmin : MonoBehaviour
         HideStatus();
     }
 
-    // ── Public: call from Button onClick or code ───────────────
+    // ── Call from button onClick or code ──────────────────────
 
     public void SendMessage()
     {
@@ -60,17 +55,21 @@ public class ContactAdmin : MonoBehaviour
             {
                 sendButton.interactable = true;
                 messageInput.text = "";
-                ShowStatus("Message sent! Admin will reply via notifications.", true);
+                ShowStatus("Sent! Admin will reply soon.", true);
+
+                // Refresh the inbox list so the new message appears immediately
+                inboxViewer?.Refresh();
             },
             error =>
             {
                 sendButton.interactable = true;
                 ShowStatus("Failed: " + error.ErrorMessage, false);
+                Debug.LogError("[ContactAdmin] " + error.ErrorMessage);
             }
         );
     }
 
-    // ── Helpers ───────────────────────────────────────────────
+    // ── Status helpers ────────────────────────────────────────
 
     private void ShowStatus(string msg, bool good)
     {
@@ -78,8 +77,8 @@ public class ContactAdmin : MonoBehaviour
         statusText.gameObject.SetActive(true);
         statusText.text  = msg;
         statusText.color = good
-            ? new Color(0.30f, 1.00f, 0.50f)   // green
-            : new Color(1.00f, 0.35f, 0.35f);   // red
+            ? new Color(0.30f, 1.00f, 0.50f)
+            : new Color(1.00f, 0.35f, 0.35f);
     }
 
     private void HideStatus()

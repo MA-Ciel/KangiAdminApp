@@ -7,114 +7,133 @@ using PlayFab;
 using PlayFab.ClientModels;
 
 /// <summary>
-/// InboxViewer
-/// ─────────────────────────────────────────────────────────────
-/// Shows the player's sent messages and admin replies in a
-/// scrollable list with tabs (All / Open / Replied).
+/// InboxViewer — Shows this player's sent messages and admin replies.
 ///
-/// Inspector setup:
-///   Panel root
-///   ├─ TabAll        Button
-///   ├─ TabOpen       Button
-///   ├─ TabReplied    Button
-///   ├─ RefreshBtn    Button
-///   ├─ EmptyText     TextMeshProUGUI
-///   └─ ListContainer Transform  ← parent for MessageItem prefabs
+/// ─── Inspector setup ───────────────────────────────────────────
 ///
-/// MessageItem prefab needs these named children:
-///   BodyText         TextMeshProUGUI
-///   StatusChip       TextMeshProUGUI
-///   TimeText         TextMeshProUGUI
-///   ReplyContainer   GameObject      (active only when there is a reply)
-///   ReplyText        TextMeshProUGUI (inside ReplyContainer)
+///   Tab buttons (optional):
+///     tabAllBtn      Button   — show everything
+///     tabOpenBtn     Button   — only unanswered messages
+///     tabRepliedBtn  Button   — only replied messages
+///     refreshBtn     Button   — manual refresh
 ///
-/// Flow:
-///   1. InboxViewer.Refresh() fetches AdminInbox from PlayFab UserData
-///      (CloudScript supportWorkflow → getMessages reads Title Internal)
-///   2. Instantiates one prefab per message
-///   3. Admin replies appear as Notifications in NotificationManager
-///      AND are reflected next time Refresh() is called
+///   List:
+///     listContainer       Transform        — ScrollRect content parent
+///     messageItemPrefab   GameObject       — spawned per message
+///     emptyText           TextMeshProUGUI  — shown when list is empty
+///
+/// ─── MessageItem prefab required child names ───────────────────
+///
+///   UserNameText       TextMeshProUGUI   display name + "You"
+///   UserMessageText    TextMeshProUGUI   the message you sent
+///   TimeText           TextMeshProUGUI   relative time
+///   StatusChip         TextMeshProUGUI   "Open" / "Replied"
+///   AdminReplyBlock    GameObject        disabled until there is a reply
+///     AdminReplyText   TextMeshProUGUI   admin reply text (child of above)
+///     AdminTimeText    TextMeshProUGUI   reply timestamp (child of above)
+///
+/// ─── Data flow ─────────────────────────────────────────────────
+///   Refresh() → supportWorkflow.getMyMessages → filters by currentPlayerId
+///   Each item shows: username, message body, time, status badge
+///   If status == "replied": AdminReplyBlock is shown with admin reply text
 /// </summary>
 public class InboxViewer : MonoBehaviour
 {
     // ── Inspector ─────────────────────────────────────────────
 
-    [Header("Tabs")]
+    [Header("Tabs (all optional)")]
     [SerializeField] private Button tabAllBtn;
     [SerializeField] private Button tabOpenBtn;
     [SerializeField] private Button tabRepliedBtn;
+    [SerializeField] private Button refreshBtn;
 
     [Header("List")]
-    [SerializeField] private Transform   listContainer;
-    [SerializeField] private GameObject  messageItemPrefab;
-    [SerializeField] private TextMeshProUGUI emptyText;
-    [SerializeField] private Button      refreshBtn;
+    [SerializeField] private Transform          listContainer;
+    [SerializeField] private GameObject         messageItemPrefab;
+    [SerializeField] private TextMeshProUGUI    emptyText;
 
     [Header("Tab Colors")]
     [SerializeField] private Color activeTabColor   = new Color(0.93f, 0.28f, 0.60f);
     [SerializeField] private Color inactiveTabColor = new Color(1f, 1f, 1f, 0.4f);
 
-    // ── Internal state ────────────────────────────────────────
+    // ── Internal ──────────────────────────────────────────────
 
-    private enum TabFilter { All, Open, Replied }
-    private TabFilter currentTab = TabFilter.All;
+    private enum Tab { All, Open, Replied }
+    private Tab currentTab = Tab.All;
 
-    private List<MessageRecord> allMessages = new List<MessageRecord>();
-    private List<GameObject>    spawnedItems = new List<GameObject>();
+    private List<MsgRecord>  allMessages  = new List<MsgRecord>();
+    private List<GameObject> spawnedItems = new List<GameObject>();
+    private bool isLoading = false;
 
     // ── Lifecycle ─────────────────────────────────────────────
 
     void Start()
     {
-        tabAllBtn?.onClick.AddListener(() => SetTab(TabFilter.All));
-        tabOpenBtn?.onClick.AddListener(() => SetTab(TabFilter.Open));
-        tabRepliedBtn?.onClick.AddListener(() => SetTab(TabFilter.Replied));
+        tabAllBtn?.onClick.AddListener(()     => SwitchTab(Tab.All));
+        tabOpenBtn?.onClick.AddListener(()    => SwitchTab(Tab.Open));
+        tabRepliedBtn?.onClick.AddListener(() => SwitchTab(Tab.Replied));
         refreshBtn?.onClick.AddListener(Refresh);
 
-        SetTab(TabFilter.All);
+        SwitchTab(Tab.All);
         Refresh();
     }
 
-    // ── Public ────────────────────────────────────────────────
+    // ── Public API ────────────────────────────────────────────
 
-    /// <summary>Call this to reload messages from the server.</summary>
+    /// <summary>Reload messages from PlayFab. Safe to call any time.</summary>
     public void Refresh()
     {
+        if (isLoading) return;
+        isLoading = true;
         ShowEmpty("Loading...");
 
         PlayFabClientAPI.ExecuteCloudScript(
             new ExecuteCloudScriptRequest
             {
-                FunctionName = "supportWorkflow",
-                FunctionParameter = new { action = "getMessages" },
+                FunctionName            = "supportWorkflow",
+                FunctionParameter       = new { action = "getMyMessages" },
                 GeneratePlayStreamEvent = false
             },
-            result =>
-            {
-                allMessages.Clear();
-
-                string json = result.FunctionResult?.ToString() ?? "";
-                // Parse the messages array from the JSON string
-                allMessages = ParseMessages(json);
-
-                RenderList();
-            },
-            error =>
-            {
-                ShowEmpty("Failed to load: " + error.ErrorMessage);
-                Debug.LogError("[InboxViewer] " + error.ErrorMessage);
-            }
+            OnFetchSuccess,
+            OnFetchError
         );
+    }
+
+    // ── Fetch callbacks ───────────────────────────────────────
+
+    private void OnFetchSuccess(ExecuteCloudScriptResult result)
+    {
+        isLoading = false;
+        allMessages.Clear();
+
+        // FunctionResult from PlayFab SDK is a JsonObject whose .ToString()
+        // produces valid JSON — no extra serializer needed.
+        string json = "";
+        if (result.FunctionResult != null)
+            json = result.FunctionResult.ToString();
+
+        if (!string.IsNullOrEmpty(json))
+            allMessages = ParseMessages(json);
+
+        Debug.Log($"[InboxViewer] Loaded {allMessages.Count} messages. JSON length: {json.Length}");
+        RenderList();
+    }
+
+    private void OnFetchError(PlayFabError error)
+    {
+        isLoading = false;
+        ShowEmpty("Failed to load: " + error.ErrorMessage);
+        Debug.LogError("[InboxViewer] " + error.ErrorMessage);
     }
 
     // ── Tab ───────────────────────────────────────────────────
 
-    private void SetTab(TabFilter tab)
+    private void SwitchTab(Tab tab)
     {
         currentTab = tab;
-        SetTabColor(tabAllBtn,     tab == TabFilter.All);
-        SetTabColor(tabOpenBtn,    tab == TabFilter.Open);
-        SetTabColor(tabRepliedBtn, tab == TabFilter.Replied);
+        SetTabColor(tabAllBtn,     tab == Tab.All);
+        SetTabColor(tabOpenBtn,    tab == Tab.Open);
+        SetTabColor(tabRepliedBtn, tab == Tab.Replied);
         RenderList();
     }
 
@@ -129,24 +148,24 @@ public class InboxViewer : MonoBehaviour
 
     private void RenderList()
     {
-        // Clear old items
-        foreach (var go in spawnedItems) Destroy(go);
+        // Destroy old items
+        foreach (var go in spawnedItems) { if (go != null) Destroy(go); }
         spawnedItems.Clear();
 
-        // Filter
-        var filtered = new List<MessageRecord>();
+        // Apply tab filter
+        var filtered = new List<MsgRecord>();
         foreach (var m in allMessages)
         {
-            bool show = currentTab == TabFilter.All
-                     || (currentTab == TabFilter.Open    && m.status == "open")
-                     || (currentTab == TabFilter.Replied && m.status == "replied");
+            bool show = currentTab == Tab.All
+                     || (currentTab == Tab.Open    && m.status == "open")
+                     || (currentTab == Tab.Replied && m.status == "replied");
             if (show) filtered.Add(m);
         }
 
         if (filtered.Count == 0)
         {
             ShowEmpty(allMessages.Count == 0
-                ? "You haven't sent any messages yet."
+                ? "No messages yet.\nUse the input above to contact admin."
                 : "No messages in this tab.");
             return;
         }
@@ -156,47 +175,56 @@ public class InboxViewer : MonoBehaviour
         foreach (var msg in filtered)
         {
             if (messageItemPrefab == null || listContainer == null) break;
-
             GameObject item = Instantiate(messageItemPrefab, listContainer);
             spawnedItems.Add(item);
             PopulateItem(item, msg);
         }
     }
 
-    private void PopulateItem(GameObject item, MessageRecord msg)
+    private void PopulateItem(GameObject item, MsgRecord msg)
     {
-        // ── Message body
-        var bodyTxt = item.transform.Find("BodyText")?.GetComponent<TextMeshProUGUI>();
-        if (bodyTxt != null) bodyTxt.text = msg.body;
+        // ── Username ("You" + display name)
+        var userNameTxt = item.transform.Find("UserNameText")?.GetComponent<TextMeshProUGUI>();
+        if (userNameTxt != null)
+            userNameTxt.text = string.IsNullOrEmpty(msg.displayName)
+                ? "You"
+                : $"You ({msg.displayName})";
 
-        // ── Status chip
-        var statusTxt = item.transform.Find("StatusChip")?.GetComponent<TextMeshProUGUI>();
-        if (statusTxt != null)
-        {
-            if (msg.status == "open")
-            {
-                statusTxt.text  = "Open";
-                statusTxt.color = new Color(1f, 0.8f, 0.2f);  // amber
-            }
-            else
-            {
-                statusTxt.text  = "Replied";
-                statusTxt.color = new Color(0.3f, 1f, 0.5f);  // green
-            }
-        }
+        // ── Message body the user sent
+        var userMsgTxt = item.transform.Find("UserMessageText")?.GetComponent<TextMeshProUGUI>();
+        if (userMsgTxt != null) userMsgTxt.text = msg.body;
 
         // ── Timestamp
         var timeTxt = item.transform.Find("TimeText")?.GetComponent<TextMeshProUGUI>();
         if (timeTxt != null) timeTxt.text = FormatTime(msg.createdAt);
 
-        // ── Admin reply section
-        var replyContainer = item.transform.Find("ReplyContainer")?.gameObject;
-        var replyTxt       = item.transform.Find("ReplyText")?.GetComponent<TextMeshProUGUI>();
-        bool hasReply = !string.IsNullOrEmpty(msg.adminReply);
+        // ── Status chip
+        var statusTxt = item.transform.Find("StatusChip")?.GetComponent<TextMeshProUGUI>();
+        if (statusTxt != null)
+        {
+            bool replied = msg.status == "replied";
+            statusTxt.text  = replied ? "Replied" : "Open";
+            statusTxt.color = replied
+                ? new Color(0.30f, 1.00f, 0.50f)  // green
+                : new Color(1.00f, 0.80f, 0.20f);  // amber
+        }
 
-        if (replyContainer != null) replyContainer.SetActive(hasReply);
-        if (replyTxt != null && hasReply)
-            replyTxt.text = $"Admin ({FormatTime(msg.repliedAt)}):\n{msg.adminReply}";
+        // ── Admin reply block (only show if there is a reply)
+        bool hasReply = !string.IsNullOrEmpty(msg.adminReply);
+        var replyBlock = item.transform.Find("AdminReplyBlock")?.gameObject;
+        if (replyBlock != null) replyBlock.SetActive(hasReply);
+
+        if (hasReply)
+        {
+            // Try both paths: direct child or inside AdminReplyBlock
+            var replyTxt  = item.transform.Find("AdminReplyBlock/AdminReplyText")?.GetComponent<TextMeshProUGUI>()
+                         ?? item.transform.Find("AdminReplyText")?.GetComponent<TextMeshProUGUI>();
+            var replyTime = item.transform.Find("AdminReplyBlock/AdminTimeText")?.GetComponent<TextMeshProUGUI>()
+                         ?? item.transform.Find("AdminTimeText")?.GetComponent<TextMeshProUGUI>();
+
+            if (replyTxt  != null) replyTxt.text  = msg.adminReply;
+            if (replyTime != null) replyTime.text  = FormatTime(msg.repliedAt);
+        }
     }
 
     // ── Helpers ───────────────────────────────────────────────
@@ -217,8 +245,8 @@ public class InboxViewer : MonoBehaviour
     {
         try
         {
-            DateTime t    = DateTime.Parse(iso);
-            TimeSpan diff = DateTime.UtcNow - t;
+            DateTime  t    = DateTime.Parse(iso);
+            TimeSpan  diff = DateTime.UtcNow - t;
             if (diff.TotalMinutes < 1)  return "Just now";
             if (diff.TotalMinutes < 60) return $"{(int)diff.TotalMinutes}m ago";
             if (diff.TotalHours   < 24) return $"{(int)diff.TotalHours}h ago";
@@ -228,32 +256,51 @@ public class InboxViewer : MonoBehaviour
         catch { return ""; }
     }
 
-    // ── Minimal JSON parser (no external deps) ────────────────
+    // ── JSON parser ───────────────────────────────────────────
+    // Parses: { "success":true, "messages":[{...},{...}], "total":N }
 
-    private List<MessageRecord> ParseMessages(string json)
+    private List<MsgRecord> ParseMessages(string json)
     {
-        var result = new List<MessageRecord>();
+        var result = new List<MsgRecord>();
         if (string.IsNullOrEmpty(json)) return result;
 
-        // Find "messages":[...]
-        int arrKey = json.IndexOf("\"messages\"");
-        if (arrKey == -1) return result;
+        // Locate the "messages" array
+        int keyIdx = json.IndexOf("\"messages\"", StringComparison.Ordinal);
+        if (keyIdx == -1) return result;
 
-        int arrStart = json.IndexOf("[", arrKey);
-        int arrEnd   = json.LastIndexOf("]");
-        if (arrStart == -1 || arrEnd == -1 || arrEnd <= arrStart) return result;
+        int arrStart = json.IndexOf('[', keyIdx);
+        if (arrStart == -1) return result;
+
+        // Find the matching closing bracket for this array
+        int arrEnd   = -1;
+        int depth    = 0;
+        for (int i = arrStart; i < json.Length; i++)
+        {
+            if (json[i] == '[') depth++;
+            else if (json[i] == ']')
+            {
+                depth--;
+                if (depth == 0) { arrEnd = i; break; }
+            }
+        }
+        if (arrEnd == -1) return result;
 
         string content = json.Substring(arrStart + 1, arrEnd - arrStart - 1).Trim();
         if (string.IsNullOrEmpty(content)) return result;
 
-        int depth = 0, objStart = -1;
+        // Split individual objects
+        int objDepth = 0, objStart = -1;
         for (int i = 0; i < content.Length; i++)
         {
-            if (content[i] == '{') { if (depth == 0) objStart = i; depth++; }
+            if (content[i] == '{')
+            {
+                if (objDepth == 0) objStart = i;
+                objDepth++;
+            }
             else if (content[i] == '}')
             {
-                depth--;
-                if (depth == 0 && objStart != -1)
+                objDepth--;
+                if (objDepth == 0 && objStart != -1)
                 {
                     string obj = content.Substring(objStart, i - objStart + 1);
                     var rec = ParseRecord(obj);
@@ -265,36 +312,71 @@ public class InboxViewer : MonoBehaviour
         return result;
     }
 
-    private MessageRecord ParseRecord(string json)
+    private MsgRecord ParseRecord(string json)
     {
         try
         {
-            return new MessageRecord
+            return new MsgRecord
             {
-                id         = Extract(json, "id"),
-                body       = Extract(json, "body"),
-                status     = Extract(json, "status"),
-                adminReply = Extract(json, "adminReply"),
-                createdAt  = Extract(json, "createdAt"),
-                repliedAt  = Extract(json, "repliedAt")
+                id          = Extract(json, "id"),
+                playFabId   = Extract(json, "playFabId"),
+                displayName = Extract(json, "displayName"),
+                body        = Extract(json, "body"),
+                status      = Extract(json, "status"),
+                adminReply  = Extract(json, "adminReply"),
+                createdAt   = Extract(json, "createdAt"),
+                repliedAt   = Extract(json, "repliedAt")
             };
         }
         catch { return null; }
     }
 
+    /// <summary>
+    /// Extract a simple string value for a given JSON key.
+    /// Handles escaped quotes inside values.
+    /// </summary>
     private string Extract(string json, string key)
     {
-        string k = "\"" + key + "\"";
-        int ki = json.IndexOf(k);
+        string searchKey = "\"" + key + "\"";
+        int ki = json.IndexOf(searchKey, StringComparison.Ordinal);
         if (ki == -1) return "";
-        int ci = json.IndexOf(":", ki);
+
+        int ci = json.IndexOf(':', ki + searchKey.Length);
         if (ci == -1) return "";
-        int vs = json.IndexOf("\"", ci);
-        if (vs == -1) return "";
-        vs++;
-        int ve = json.IndexOf("\"", vs);
-        if (ve == -1) return "";
-        return json.Substring(vs, ve - vs);
+
+        // Skip whitespace after colon
+        int vs = ci + 1;
+        while (vs < json.Length && json[vs] == ' ') vs++;
+
+        if (vs >= json.Length) return "";
+
+        // Null value
+        if (json[vs] != '"') return "";
+
+        vs++; // skip opening quote
+
+        // Read until unescaped closing quote
+        var sb = new System.Text.StringBuilder();
+        while (vs < json.Length)
+        {
+            char c = json[vs];
+            if (c == '\\' && vs + 1 < json.Length)
+            {
+                char next = json[vs + 1];
+                switch (next)
+                {
+                    case '"':  sb.Append('"');  vs += 2; continue;
+                    case '\\': sb.Append('\\'); vs += 2; continue;
+                    case 'n':  sb.Append('\n'); vs += 2; continue;
+                    case 'r':  sb.Append('\r'); vs += 2; continue;
+                    default:   sb.Append(next); vs += 2; continue;
+                }
+            }
+            if (c == '"') break;
+            sb.Append(c);
+            vs++;
+        }
+        return sb.ToString();
     }
 
     void OnDestroy()
@@ -307,11 +389,13 @@ public class InboxViewer : MonoBehaviour
 
     // ── Data model ────────────────────────────────────────────
 
-    private class MessageRecord
+    private class MsgRecord
     {
         public string id;
+        public string playFabId;
+        public string displayName;
         public string body;
-        public string status;      // "open" | "replied"
+        public string status;       // "open" | "replied"
         public string adminReply;
         public string createdAt;
         public string repliedAt;

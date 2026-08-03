@@ -1,93 +1,117 @@
 # Kangi — Admin Inbox System (Unity)
 
-Two scripts in this folder handle the full user → admin messaging flow.
+Two scripts. User sends a message → admin replies from web dashboard → reply shows in Unity.
 
 ---
 
-## ContactAdmin.cs — Send a message
+## ContactAdmin.cs
 
-**Attach to:** any GameObject in the scene (e.g. a "ContactPanel" Canvas).
+Attach to any Canvas GameObject.
 
 | Inspector field | Type | Required |
 |---|---|---|
 | `messageInput` | TMP_InputField | ✅ |
 | `sendButton` | Button | ✅ |
 | `statusText` | TextMeshProUGUI | optional |
+| `inboxViewer` | InboxViewer | optional — auto-refreshes list after send |
 
-**How it works:**
-1. User types in `messageInput` and clicks `sendButton`.
-2. Calls `supportWorkflow → sendMessage` CloudScript.
-3. Message is stored in PlayFab Title Internal Data (`AdminInbox`).
-4. Admin sees it in the web dashboard **Messages** tab.
-5. Admin replies from the dashboard → user receives a **Notification** in-game via `NotificationManager`.
+**What happens on Send:**
+1. Calls `supportWorkflow → sendMessage` CloudScript
+2. Message stored in PlayFab Title Internal Data (`AdminInbox`)
+3. `statusText` shows "Sent! Admin will reply soon." in green
+4. If `inboxViewer` is assigned, calls `inboxViewer.Refresh()` so the new message appears in the list immediately
 
 ---
 
-## InboxViewer.cs — View sent messages + admin replies
+## InboxViewer.cs
 
-**Attach to:** a separate "InboxPanel" Canvas or as a second tab inside the same panel.
+Attach to a separate InboxPanel Canvas (or same Canvas, different tab).
 
 | Inspector field | Type | Required |
 |---|---|---|
+| `listContainer` | Transform | ✅ — ScrollRect content object |
+| `messageItemPrefab` | GameObject | ✅ — spawned per message |
+| `emptyText` | TextMeshProUGUI | optional |
 | `tabAllBtn` | Button | optional |
 | `tabOpenBtn` | Button | optional |
 | `tabRepliedBtn` | Button | optional |
 | `refreshBtn` | Button | optional |
-| `listContainer` | Transform | ✅ |
-| `messageItemPrefab` | GameObject | ✅ |
-| `emptyText` | TextMeshProUGUI | optional |
 
 ### MessageItem Prefab — required child names
+
 ```
-MessageItem (prefab root)
-├── BodyText        TextMeshProUGUI   ← the user's original message
-├── StatusChip      TextMeshProUGUI   ← "Open" / "Replied"
-├── TimeText        TextMeshProUGUI   ← relative time ("2h ago")
-├── ReplyContainer  GameObject        ← hide when no reply
-│   └── ReplyText   TextMeshProUGUI   ← admin reply text + timestamp
+MessageItem  (root)
+├── UserNameText       TextMeshProUGUI   "You (DisplayName)"
+├── UserMessageText    TextMeshProUGUI   message body the user sent
+├── TimeText           TextMeshProUGUI   "2h ago"
+├── StatusChip         TextMeshProUGUI   "Open" (amber) or "Replied" (green)
+└── AdminReplyBlock    GameObject        hidden until admin replies
+    ├── AdminReplyText TextMeshProUGUI   admin reply text
+    └── AdminTimeText  TextMeshProUGUI   reply time "5m ago"
 ```
 
-**How it works:**
-1. On `Start()` calls `Refresh()` automatically.
-2. `Refresh()` calls `supportWorkflow → getMessages` CloudScript.
-3. Renders one prefab per message, filtered by active tab.
-4. Call `Refresh()` again any time (e.g. when panel is opened).
+**What Refresh() does:**
+1. Calls `supportWorkflow → getMyMessages` (only this player's messages)
+2. Filters by current tab (All / Open / Replied)
+3. Spawns one prefab per message
+4. `AdminReplyBlock` is activated only when `adminReply` is not empty
 
 ---
 
-## Scene hierarchy example
+## Scene hierarchy
 
 ```
 Canvas
 ├── ContactPanel
-│   ├── ContactAdmin.cs (component)
-│   ├── MessageInput    (TMP_InputField)
-│   ├── SendButton      (Button)
-│   └── StatusText      (TextMeshProUGUI)
+│   ├── ContactAdmin (component)
+│   ├── MessageInput      TMP_InputField
+│   ├── SendButton        Button
+│   ├── StatusText        TextMeshProUGUI
+│   └── InboxViewer ref → (drag InboxPanel here)
 │
 └── InboxPanel
-    ├── InboxViewer.cs (component)
+    ├── InboxViewer (component)
     ├── Tabs
-    │   ├── TabAllBtn     (Button)
-    │   ├── TabOpenBtn    (Button)
-    │   └── TabRepliedBtn (Button)
-    ├── RefreshBtn        (Button)
-    ├── EmptyText         (TextMeshProUGUI)
-    └── ListContainer     (Transform — ScrollRect content)
+    │   ├── TabAll       Button
+    │   ├── TabOpen      Button
+    │   └── TabReplied   Button
+    ├── RefreshBtn       Button
+    ├── EmptyText        TextMeshProUGUI
+    └── ScrollRect
+        └── Content (ListContainer Transform)
 ```
 
 ---
 
-## Flow diagram
+## Full flow
 
 ```
-User (Unity)                  PlayFab CloudScript          Admin (Web Dashboard)
-─────────────                 ───────────────────          ─────────────────────
-ContactAdmin.SendMessage()
-  → supportWorkflow           → stores in AdminInbox  →    Messages tab shows it
-                                                           Admin types reply
-  ← Notification arrives  ←  → sendNotification()    ←   "Reply" button clicked
-InboxViewer.Refresh()
-  → supportWorkflow           → reads AdminInbox
-  ← shows reply in list
+User types in Unity (ContactAdmin)
+  → supportWorkflow.sendMessage
+  → stored in AdminInbox (Title Internal Data)
+  → InboxViewer.Refresh() auto-called → message shown in list with status "Open"
+
+Admin opens web dashboard Messages tab
+  → sees message with username + body
+  → types reply → clicks Reply button
+  → supportWorkflow.replyMessage
+  → status flips to "replied"
+  → sendNotification fires → user gets in-game notification
+
+User opens InboxViewer (or it auto-refreshes)
+  → getMyMessages returns their messages
+  → AdminReplyBlock shown with admin reply text + time
 ```
+
+---
+
+## Admin dashboard (web)
+
+The Messages tab in the admin web dashboard shows:
+- Player display name + PlayFab ID
+- Message body
+- Open / Replied status badge
+- Timestamp
+- Inline reply input (Enter or Reply button to send)
+- Previously sent reply shown in green block
+- Delete button to remove the message

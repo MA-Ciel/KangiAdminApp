@@ -1625,6 +1625,20 @@ handlers.supportWorkflow = function (args, context) {
     }
 
     // ────────────────────────────────────────────────────────────────────────
+    // B2. USER → get only their own messages (for InboxViewer in Unity)
+    // ────────────────────────────────────────────────────────────────────────
+    if (action === "getMyMessages") {
+        var allMessages = _readInbox();
+        var myMessages  = [];
+        for (var mi = 0; mi < allMessages.length; mi++) {
+            if (allMessages[mi].playFabId === currentPlayerId) {
+                myMessages.push(allMessages[mi]);
+            }
+        }
+        return { success: true, messages: myMessages, total: myMessages.length };
+    }
+
+    // ────────────────────────────────────────────────────────────────────────
     // C. ADMIN → reply to a message
     //    Stores the reply in the inbox AND sends a notification to the user.
     // ────────────────────────────────────────────────────────────────────────

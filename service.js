@@ -362,9 +362,13 @@ const KangiService = (function () {
         },
         (result, error) => {
           if (error) { reject(_friendlyError(error)); return; }
-          const fn = result?.data?.FunctionResult;
+          // FunctionResult can be an object or a JSON string depending on the SDK version
+          let fn = result?.data?.FunctionResult;
           if (!fn) { reject('No response from server.'); return; }
-          if (fn.error) { reject(fn.error); return; }
+          if (typeof fn === 'string') {
+            try { fn = JSON.parse(fn); } catch (e) { reject('Invalid server response.'); return; }
+          }
+          if (fn.error && !fn.success) { reject(fn.error); return; }
           resolve(fn);
         }
       );

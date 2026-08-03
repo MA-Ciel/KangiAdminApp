@@ -222,9 +222,13 @@ handlers.videoAppWorkflow = function (args, context) {
     // F. APPROVE A PENDING SONG + send notification
     if (action === "approveSong") {
         var targetSongId = adminParams.songId;
+        log.info("=== APPROVE SONG START ===");
+        log.info("Target Song ID: " + targetSongId);
+        
         var musicDataResponse = server.GetTitleInternalData({ Keys: [SONGS_DATABASE_KEY] });
 
         if (!musicDataResponse.Data || !musicDataResponse.Data[SONGS_DATABASE_KEY]) {
+            log.error("Songs catalog is empty");
             return { success: false, error: "Songs catalog empty" };
         }
 
@@ -240,18 +244,25 @@ handlers.videoAppWorkflow = function (args, context) {
             if (musicWrapper.pendingSongs) songs = songs.concat(musicWrapper.pendingSongs);
         }
 
+        log.info("Total songs found: " + songs.length);
+
         var statusUpdated = false;
         var approvedList = [];
         var pendingList = [];
         var targetSongOwnerId = "";
         var targetSongTitle = "";
+        var foundSong = null;
 
         for (var j = 0; j < songs.length; j++) {
             if (songs[j].SongId === targetSongId) {
                 songs[j].isPending = false;
                 statusUpdated = true;
-                targetSongOwnerId = songs[j].uploaderId || songs[j].ownerId || "";
+                targetSongOwnerId = songs[j].uploaderId || songs[j].ownerId || songs[j].uploader || "";
                 targetSongTitle = songs[j].title || songs[j].name || "Your song";
+                foundSong = songs[j];
+                log.info("Song found!");
+                log.info("Song Title: " + targetSongTitle);
+                log.info("Owner ID: " + targetSongOwnerId);
             }
 
             if (songs[j].isPending === true || songs[j].isPending === "true") {
@@ -272,25 +283,44 @@ handlers.videoAppWorkflow = function (args, context) {
                 Value: JSON.stringify(updatedMusicPayload)
             });
 
+            log.info("Song approved in database");
+
             // Send notification to song owner
-            if (targetSongOwnerId) {
-                sendNotification(
+            if (targetSongOwnerId && targetSongOwnerId !== "") {
+                log.info("Sending notification to: " + targetSongOwnerId);
+                var notifResult = sendNotification(
                     targetSongOwnerId,
                     "Song Approved!",
                     "Your song '" + targetSongTitle + "' has been approved and is now live!",
                     "audio_approved",
                     { songId: targetSongId, songTitle: targetSongTitle }
                 );
+                log.info("Notification result: " + JSON.stringify(notifResult));
+            } else {
+                log.error("No owner ID found! Cannot send notification.");
+                log.error("Song data: " + JSON.stringify(foundSong));
             }
 
-            return { success: true, message: "Song approved successfully." };
+            log.info("=== APPROVE SONG END ===");
+            return { 
+                success: true, 
+                message: "Song approved successfully.",
+                ownerId: targetSongOwnerId,
+                notificationSent: targetSongOwnerId !== ""
+            };
         }
+        
+        log.error("Song ID not found: " + targetSongId);
+        log.info("=== APPROVE SONG END (FAILED) ===");
         return { success: false, message: "Song ID not found." };
     }
 
     // G. DELETE A SONG FROM THE PLATFORM + send notification
     if (action === "deleteSong") {
         var songIdToDelete = adminParams.songId;
+        log.info("=== DELETE SONG START ===");
+        log.info("Target Song ID: " + songIdToDelete);
+        
         var resSongs = server.GetTitleInternalData({ Keys: [SONGS_DATABASE_KEY] });
 
         if (resSongs.Data && resSongs.Data[SONGS_DATABASE_KEY]) {
@@ -306,13 +336,21 @@ handlers.videoAppWorkflow = function (args, context) {
                 if (wrapSongs.pendingSongs) allSongsList = allSongsList.concat(wrapSongs.pendingSongs);
             }
 
+            log.info("Total songs found: " + allSongsList.length);
+
             // Find the song owner before deleting
             var deletedSongOwnerId = "";
             var deletedSongTitle = "";
+            var foundSong = null;
+            
             for (var ds = 0; ds < allSongsList.length; ds++) {
                 if (allSongsList[ds].SongId === songIdToDelete) {
-                    deletedSongOwnerId = allSongsList[ds].uploaderId || allSongsList[ds].ownerId || "";
+                    deletedSongOwnerId = allSongsList[ds].uploaderId || allSongsList[ds].ownerId || allSongsList[ds].uploader || "";
                     deletedSongTitle = allSongsList[ds].title || allSongsList[ds].name || "Your song";
+                    foundSong = allSongsList[ds];
+                    log.info("Song found!");
+                    log.info("Song Title: " + deletedSongTitle);
+                    log.info("Owner ID: " + deletedSongOwnerId);
                     break;
                 }
             }
@@ -340,19 +378,37 @@ handlers.videoAppWorkflow = function (args, context) {
                 Value: JSON.stringify(updatedWrap)
             });
 
+            log.info("Song deleted from database");
+
             // Send notification to song owner
-            if (deletedSongOwnerId) {
-                sendNotification(
+            if (deletedSongOwnerId && deletedSongOwnerId !== "") {
+                log.info("Sending notification to: " + deletedSongOwnerId);
+                var deleteNotifResult = sendNotification(
                     deletedSongOwnerId,
                     "Song Removed",
                     "Your song '" + deletedSongTitle + "' has been removed from the platform.",
                     "audio_deleted",
                     { songId: songIdToDelete, songTitle: deletedSongTitle }
                 );
+                log.info("Notification result: " + JSON.stringify(deleteNotifResult));
+            } else {
+                log.error("No owner ID found! Cannot send notification.");
+                if (foundSong) {
+                    log.error("Song data: " + JSON.stringify(foundSong));
+                }
             }
 
-            return { success: true, message: "Song removed from active tables." };
+            log.info("=== DELETE SONG END ===");
+            return { 
+                success: true, 
+                message: "Song removed from active tables.",
+                ownerId: deletedSongOwnerId,
+                notificationSent: deletedSongOwnerId !== ""
+            };
         }
+        
+        log.error("No catalog active data found");
+        log.info("=== DELETE SONG END (FAILED) ===");
         return { success: false, message: "No catalog active data found." };
     }
 
@@ -722,9 +778,16 @@ handlers.notificationWorkflow = function (args, context) {
 };
 
 function sendNotification(targetPlayFabId, title, message, type, additionalData) {
+    log.info(">>> sendNotification called");
+    log.info("Target: " + targetPlayFabId);
+    log.info("Title: " + title);
+    log.info("Type: " + type);
+    
     try {
         var notifKey = "Notifications";
-        var userDataResult = server.GetUserInternalData({
+        
+        // Get existing notifications from UserData
+        var userDataResult = server.GetUserData({
             PlayFabId: targetPlayFabId,
             Keys: [notifKey]
         });
@@ -733,12 +796,16 @@ function sendNotification(targetPlayFabId, title, message, type, additionalData)
         if (userDataResult.Data && userDataResult.Data[notifKey]) {
             try {
                 notifications = JSON.parse(userDataResult.Data[notifKey].Value);
+                log.info("Existing notifications count: " + notifications.length);
             } catch (e) {
                 log.error("Failed to parse existing notifications: " + e);
                 notifications = [];
             }
+        } else {
+            log.info("No existing notifications found, creating new list");
         }
 
+        // Create new notification
         var notification = {
             id: generateId("notif"),
             title: title,
@@ -749,20 +816,27 @@ function sendNotification(targetPlayFabId, title, message, type, additionalData)
             createdAt: new Date().toISOString()
         };
 
+        // Add to beginning of array (newest first)
         notifications.unshift(notification);
+        log.info("New notification added. Total count: " + notifications.length);
 
+        // Keep only last 50
         if (notifications.length > 50) {
             notifications = notifications.slice(0, 50);
+            log.info("Trimmed to 50 notifications");
         }
 
-        server.UpdateUserInternalData({
+        // Save to UserData (Public, readable by client)
+        server.UpdateUserData({
             PlayFabId: targetPlayFabId,
             Data: {
                 Notifications: JSON.stringify(notifications)
-            }
+            },
+            Permission: "Public"
         });
 
-        log.info("Notification sent to " + targetPlayFabId + ": " + title);
+        log.info("✓ Notification saved to UserData successfully!");
+        log.info("Notification ID: " + notification.id);
 
         return {
             success: true,
@@ -770,7 +844,7 @@ function sendNotification(targetPlayFabId, title, message, type, additionalData)
             notification: notification
         };
     } catch (error) {
-        log.error("Error sending notification: " + error);
+        log.error("✗ Error sending notification: " + error);
         return { success: false, error: error.message || "Failed to send notification." };
     }
 }
@@ -778,7 +852,7 @@ function sendNotification(targetPlayFabId, title, message, type, additionalData)
 function getNotifications(playFabId) {
     try {
         var notifKey = "Notifications";
-        var userDataResult = server.GetUserInternalData({
+        var userDataResult = server.GetUserData({
             PlayFabId: playFabId,
             Keys: [notifKey]
         });
@@ -813,7 +887,7 @@ function getNotifications(playFabId) {
 function getUnreadCount(playFabId) {
     try {
         var notifKey = "Notifications";
-        var userDataResult = server.GetUserInternalData({
+        var userDataResult = server.GetUserData({
             PlayFabId: playFabId,
             Keys: [notifKey]
         });
@@ -1211,6 +1285,17 @@ handlers.adminUserWorkflow = function (args, context) {
         // Sync registry
         _upsertRegistry({ playFabId: resolvedId, displayName: resolvedName, email: resolvedEmail, isAdmin: true, isBanned: false });
 
+        // Send notification
+        log.info("Sending admin granted notification to: " + resolvedId);
+        var adminNotifResult = sendNotification(
+            resolvedId,
+            "Admin Access Granted",
+            "You have been granted admin privileges on the platform.",
+            "admin_granted",
+            { grantedAt: new Date().toISOString() }
+        );
+        log.info("Admin notification result: " + JSON.stringify(adminNotifResult));
+
         return { success: true, message: "Admin granted.", playFabId: resolvedId, displayName: resolvedName, email: resolvedEmail };
     }
 
@@ -1246,6 +1331,17 @@ handlers.adminUserWorkflow = function (args, context) {
             if (rlist[ri].playFabId === rId) { rlist[ri].isAdmin = false; break; }
         }
         _saveRegistry(rlist);
+
+        // Send notification
+        log.info("Sending admin revoked notification to: " + rId);
+        var revokeNotifResult = sendNotification(
+            rId,
+            "Admin Access Revoked",
+            "Your admin privileges have been revoked.",
+            "admin_revoked",
+            { revokedAt: new Date().toISOString() }
+        );
+        log.info("Revoke notification result: " + JSON.stringify(revokeNotifResult));
 
         return { success: true, message: "Admin revoked.", playFabId: rId, email: rEmail };
     }

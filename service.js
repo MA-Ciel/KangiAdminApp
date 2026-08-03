@@ -228,8 +228,35 @@ const KangiService = (function () {
   /* Fetch all registered users from registry */
   function getAllUsers() { return _callAdminScript('getAllUsers', {}); }
 
-  /* Ban a user — accepts email or playFabId */
-  function banUser(email, playFabId)   { return _callAdminScript('banUser',   { email: email || '', playFabId: playFabId || '' }); }
+  /* Ban a user — accepts email, playFabId, and optional duration in days (0 = permanent) */
+  function banUser(email, playFabId, durationDays)   { 
+    return _callAdminScript('banUser', { 
+      email: email || '', 
+      playFabId: playFabId || '',
+      durationDays: durationDays !== undefined ? durationDays : 0
+    }); 
+  }
+
+  /* Get user's unlocked characters */
+  function getUserCharacters(playFabId) {
+    return new Promise((resolve, reject) => {
+      PlayFabClientApi.GetUserData({
+        PlayFabId: playFabId,
+        Keys: ['UnlockedCharacters']
+      }, (result) => {
+        if (result && result.data && result.data.Data) {
+          const unlockedData = result.data.Data.UnlockedCharacters;
+          const unlockedCharacters = unlockedData ? JSON.parse(unlockedData.Value) : [];
+          resolve({ unlockedCharacters });
+        } else {
+          resolve({ unlockedCharacters: [] });
+        }
+      }, (error) => {
+        console.error('Get user characters error:', error);
+        resolve({ unlockedCharacters: [] }); // Don't reject, just return empty
+      });
+    });
+  }
 
   /* Unban a user — accepts email or playFabId */
   function unbanUser(email, playFabId) { return _callAdminScript('unbanUser', { email: email || '', playFabId: playFabId || '' }); }
@@ -291,7 +318,8 @@ const KangiService = (function () {
     registerUser,
     getAllUsers,
     banUser,
-    unbanUser
+    unbanUser,
+    getUserCharacters
   };
 
 })();

@@ -427,15 +427,29 @@
               <h3>All Users</h3>
               <p>Every registered player in the Kangi PlayFab title.</p>
             </div>
-            <button id="loadUsersBtn" class="btn btn-secondary btn-sm">
-              <svg viewBox="0 0 20 20" fill="currentColor" style="width:14px;height:14px;">
-                <path d="M9 6a3 3 0 11-6 0 3 3 0 016 0zM17 6a3 3 0 11-6 0 3 3 0 016 0zM12.93 17c.046-.327.07-.66.07-1a6.97 6.97 0 00-1.5-4.33A5 5 0 0119 16v1h-6.07zM6 11a5 5 0 015 5v1H1v-1a5 5 0 015-5z"/>
-              </svg>
-              Load Users
-            </button>
+            <div style="display: flex; gap: 0.75rem; align-items: center;">
+              <div class="input-wrap" style="width: 300px; margin: 0;">
+                <svg class="input-icon" viewBox="0 0 20 20" fill="currentColor">
+                  <path fill-rule="evenodd" d="M8 4a4 4 0 100 8 4 4 0 000-8zM2 8a6 6 0 1110.89 3.476l4.817 4.817a1 1 0 01-1.414 1.414l-4.816-4.816A6 6 0 012 8z" clip-rule="evenodd"/>
+                </svg>
+                <input id="userSearchInput" type="text" placeholder="Search users by name, email, or ID..." style="padding-right: 2.5rem;" />
+                <button id="clearSearchBtn" class="btn-icon-ghost" style="position: absolute; right: 8px; top: 50%; transform: translateY(-50%); padding: 4px; display: none;" title="Clear search">
+                  <svg viewBox="0 0 20 20" fill="currentColor" style="width:14px;height:14px;">
+                    <path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zM8.707 7.293a1 1 0 00-1.414 1.414L8.586 10l-1.293 1.293a1 1 0 101.414 1.414L10 11.414l1.293 1.293a1 1 0 001.414-1.414L11.414 10l1.293-1.293a1 1 0 00-1.414-1.414L10 8.586 8.707 7.293z" clip-rule="evenodd"/>
+                  </svg>
+                </button>
+              </div>
+              <button id="loadUsersBtn" class="btn btn-secondary btn-sm">
+                <svg viewBox="0 0 20 20" fill="currentColor" style="width:14px;height:14px;">
+                  <path d="M9 6a3 3 0 11-6 0 3 3 0 016 0zM17 6a3 3 0 11-6 0 3 3 0 016 0zM12.93 17c.046-.327.07-.66.07-1a6.97 6.97 0 00-1.5-4.33A5 5 0 0119 16v1h-6.07zM6 11a5 5 0 015 5v1H1v-1a5 5 0 015-5z"/>
+                </svg>
+                Load Users
+              </button>
+            </div>
           </div>
           <div class="card-body">
             <div id="usersAlert" class="alert hidden"></div>
+            <div id="userSearchStats" class="search-stats hidden"></div>
             <div id="usersList">
               <div class="empty-state">
                 <svg viewBox="0 0 20 20" fill="currentColor"><path d="M9 6a3 3 0 11-6 0 3 3 0 016 0zM17 6a3 3 0 11-6 0 3 3 0 016 0zM12.93 17c.046-.327.07-.66.07-1a6.97 6.97 0 00-1.5-4.33A5 5 0 0119 16v1h-6.07zM6 11a5 5 0 015 5v1H1v-1a5 5 0 015-5z"/></svg>
@@ -531,6 +545,68 @@
 
     </div>
   </main>
+</div>
+
+<!-- User Details Modal -->
+<div id="userDetailsModal" class="modal hidden">
+  <div class="modal-overlay"></div>
+  <div class="modal-content user-details-modal">
+    <div class="modal-header">
+      <h3 id="userDetailsTitle">User Details</h3>
+      <button class="modal-close" id="closeUserModal" title="Close">
+        <svg viewBox="0 0 20 20" fill="currentColor">
+          <path fill-rule="evenodd" d="M4.293 4.293a1 1 0 011.414 0L10 8.586l4.293-4.293a1 1 0 111.414 1.414L11.414 10l4.293 4.293a1 1 0 01-1.414 1.414L10 11.414l-4.293 4.293a1 1 0 01-1.414-1.414L8.586 10 4.293 5.707a1 1 0 010-1.414z" clip-rule="evenodd"/>
+        </svg>
+      </button>
+    </div>
+    <div class="modal-body" id="userDetailsBody">
+      <div class="loading-spinner">
+        <div class="btn-loader"></div>
+        <p>Loading user details...</p>
+      </div>
+    </div>
+    <div class="modal-footer" id="userDetailsFooter">
+      <button class="btn btn-ghost" id="closeUserModalBtn">Close</button>
+    </div>
+  </div>
+</div>
+
+<!-- Ban Duration Modal -->
+<div id="banDurationModal" class="modal hidden">
+  <div class="modal-overlay"></div>
+  <div class="modal-content ban-modal">
+    <div class="modal-header">
+      <h3>Select Ban Duration</h3>
+      <button class="modal-close" id="closeBanModal" title="Close">
+        <svg viewBox="0 0 20 20" fill="currentColor">
+          <path fill-rule="evenodd" d="M4.293 4.293a1 1 0 011.414 0L10 8.586l4.293-4.293a1 1 0 111.414 1.414L11.414 10l4.293 4.293a1 1 0 01-1.414 1.414L10 11.414l-4.293 4.293a1 1 0 01-1.414-1.414L8.586 10 4.293 5.707a1 1 0 010-1.414z" clip-rule="evenodd"/>
+        </svg>
+      </button>
+    </div>
+    <div class="modal-body">
+      <p id="banUserName" class="ban-user-name"></p>
+      <div class="ban-options">
+        <button class="ban-option-btn" data-duration="3">
+          <svg viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm1-12a1 1 0 10-2 0v4a1 1 0 00.293.707l2.828 2.829a1 1 0 101.415-1.415L11 9.586V6z" clip-rule="evenodd"/></svg>
+          <span class="ban-option-label">3 Days</span>
+          <span class="ban-option-desc">Short-term suspension</span>
+        </button>
+        <button class="ban-option-btn" data-duration="7">
+          <svg viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm1-12a1 1 0 10-2 0v4a1 1 0 00.293.707l2.828 2.829a1 1 0 101.415-1.415L11 9.586V6z" clip-rule="evenodd"/></svg>
+          <span class="ban-option-label">7 Days</span>
+          <span class="ban-option-desc">Medium-term suspension</span>
+        </button>
+        <button class="ban-option-btn ban-option-permanent" data-duration="permanent">
+          <svg viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M13.477 14.89A6 6 0 015.11 6.524L13.477 14.89zm1.414-1.414L6.524 5.11a6 6 0 018.367 8.367zM18 10a8 8 0 11-16 0 8 8 0 0116 0z" clip-rule="evenodd"/></svg>
+          <span class="ban-option-label">Permanent</span>
+          <span class="ban-option-desc">Account permanently banned</span>
+        </button>
+      </div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-ghost" id="cancelBanBtn">Cancel</button>
+    </div>
+  </div>
 </div>
 
 <script src="service.js"></script>

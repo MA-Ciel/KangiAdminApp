@@ -6,11 +6,10 @@ using PlayFab;
 using PlayFab.ClientModels;
 
 /// <summary>
-/// Notification Manager - Handles fetching and displaying notifications from PlayFab
+/// Notification Manager - Handles fetching and displaying notifications from PlayFab UserData
 /// Auto-checks for new notifications on login and periodically
+/// UPDATED: Uses GetUserData instead of CloudScript for faster access
 /// </summary>
-namespace Kangi.ServerNotifications
-{
 public class NotificationManager : MonoBehaviour
 {
     public static NotificationManager Instance { get; private set; }
@@ -62,6 +61,9 @@ public class NotificationManager : MonoBehaviour
             StopCoroutine(checkCoroutine);
         }
         checkCoroutine = StartCoroutine(PeriodicCheck());
+        
+        // Check immediately
+        CheckForNewNotifications();
     }
 
     /// <summary>
@@ -83,129 +85,67 @@ public class NotificationManager : MonoBehaviour
     {
         while (true)
         {
-            CheckForNewNotifications();
             yield return new WaitForSeconds(checkInterval);
+            CheckForNewNotifications();
         }
     }
 
     /// <summary>
-    /// Check for new notifications from PlayFab
+    /// Check for new notifications from PlayFab UserData - MUCH FASTER!
     /// </summary>
     public void CheckForNewNotifications()
     {
-        Log("Checking for new notifications...");
+        Log("Checking for new notifications from UserData...");
 
-        var request = new ExecuteCloudScriptRequest
+        PlayFabClientAPI.GetUserData(new GetUserDataRequest
         {
-            FunctionName = "notificationWorkflow",
-            FunctionParameter = new { action = "getNotifications" }
-        };
-
-        PlayFabClientAPI.ExecuteCloudScript(request, OnGetNotificationsSuccess, OnGetNotificationsFailure);
+            Keys = new List<string> { "Notifications" }
+        }, OnGetUserDataSuccess, OnGetUserDataError);
     }
 
-    /// <summary>
-    /// Get only unread count (lightweight check)
-    /// </summary>
-    public void GetUnreadCount()
+    private void OnGetUserDataSuccess(GetUserDataResult result)
     {
-        var request = new ExecuteCloudScriptRequest
-        {
-            FunctionName = "notificationWorkflow",
-            FunctionParameter = new { action = "getUnreadCount" }
-        };
-
-        PlayFabClientAPI.ExecuteCloudScript(request, OnUnreadCountSuccess, OnError);
-    }
-
-    /// <summary>
-    /// Mark notification as read
-    /// </summary>
-    public void MarkAsRead(string notificationId)
-    {
-        var request = new ExecuteCloudScriptRequest
-        {
-            FunctionName = "notificationWorkflow",
-            FunctionParameter = new
-            {
-                action = "markAsRead",
-                notificationId = notificationId
-            }
-        };
-
-        PlayFabClientAPI.ExecuteCloudScript(request, (result) =>
-        {
-            Log($"Notification {notificationId} marked as read");
-            CheckForNewNotifications(); // Refresh
-        }, OnError);
-    }
-
-    /// <summary>
-    /// Mark all notifications as read
-    /// </summary>
-    public void MarkAllAsRead()
-    {
-        var request = new ExecuteCloudScriptRequest
-        {
-            FunctionName = "notificationWorkflow",
-            FunctionParameter = new { action = "markAllAsRead" }
-        };
-
-        PlayFabClientAPI.ExecuteCloudScript(request, (result) =>
-        {
-            Log("All notifications marked as read");
-            unreadCount = 0;
-            UpdateBadge();
-            OnUnreadCountChanged?.Invoke(0);
-        }, OnError);
-    }
-
-    /// <summary>
-    /// Delete a notification
-    /// </summary>
-    public void DeleteNotification(string notificationId)
-    {
-        var request = new ExecuteCloudScriptRequest
-        {
-            FunctionName = "notificationWorkflow",
-            FunctionParameter = new
-            {
-                action = "deleteNotification",
-                notificationId = notificationId
-            }
-        };
-
-        PlayFabClientAPI.ExecuteCloudScript(request, (result) =>
-        {
-            Log($"Notification {notificationId} deleted");
-            CheckForNewNotifications(); // Refresh
-        }, OnError);
-    }
-
-    private void OnGetNotificationsSuccess(ExecuteCloudScriptResult result)
-    {
-        if (result.FunctionResult == null) return;
-
         try
         {
-            // Parse JSON manually for compatibility
-            string jsonString = result.FunctionResult.ToString();
-            
-            // Simple JSON parsing for success field
-            if (jsonString.Contains("\"success\":true") || jsonString.Contains("\"success\": true"))
+            if (result.Data != null && result.Data.ContainsKey("Notifications"))
             {
-                // Extract notifications array and unread count manually
-                notifications = ParseNotificationsFromJson(jsonString);
-                unreadCount = ParseUnreadCountFromJson(jsonString);
+                string jsonString = result.Data["Notifications"].Value;
+                
+                if (!string.IsNullOrEmpty(jsonString))
+                {
+                    // Parse notifications array
+                    notifications = ParseNotificationsFromJson(jsonString);
+                    
+                    // Count unread
+                    unreadCount = 0;
+                    foreach (var notif in notifications)
+                    {
+                        if (!notif.read) unreadCount++;
+                    }
 
-                Log($"Received {notifications.Count} notifications, {unreadCount} unread");
+                    Log($"✓ Received {notifications.Count} notifications, {unreadCount} unread");
 
+                    UpdateBadge();
+                    OnUnreadCountChanged?.Invoke(unreadCount);
+                    OnNotificationsReceived?.Invoke(notifications);
+
+                    // Show popup for important unread notifications
+                    ShowImportantNotifications();
+                }
+                else
+                {
+                    Log("No notifications found");
+                    notifications.Clear();
+                    unreadCount = 0;
+                    UpdateBadge();
+                }
+            }
+            else
+            {
+                Log("No notifications in UserData");
+                notifications.Clear();
+                unreadCount = 0;
                 UpdateBadge();
-                OnUnreadCountChanged?.Invoke(unreadCount);
-                OnNotificationsReceived?.Invoke(notifications);
-
-                // Show popup for important unread notifications
-                ShowImportantNotifications();
             }
         }
         catch (System.Exception e)
@@ -214,15 +154,163 @@ public class NotificationManager : MonoBehaviour
         }
     }
 
+    private void OnGetUserDataError(PlayFabError error)
+    {
+        Log($"Failed to get notifications: {error.ErrorMessage}", true);
+    }
+
+    /// <summary>
+    /// Mark notification as read
+    /// </summary>
+    public void MarkAsRead(string notificationId)
+    {
+        // Find and mark as read locally
+        var notif = notifications.Find(n => n.id == notificationId);
+        if (notif != null)
+        {
+            notif.read = true;
+            unreadCount--;
+            if (unreadCount < 0) unreadCount = 0;
+            UpdateBadge();
+            
+            // Update in PlayFab
+            SaveNotificationsToPlayFab();
+        }
+    }
+
+    /// <summary>
+    /// Mark all notifications as read
+    /// </summary>
+    public void MarkAllAsRead()
+    {
+        foreach (var notif in notifications)
+        {
+            notif.read = true;
+        }
+        unreadCount = 0;
+        UpdateBadge();
+        OnUnreadCountChanged?.Invoke(0);
+        
+        // Update in PlayFab
+        SaveNotificationsToPlayFab();
+    }
+
+    /// <summary>
+    /// Delete a notification
+    /// </summary>
+    public void DeleteNotification(string notificationId)
+    {
+        var notif = notifications.Find(n => n.id == notificationId);
+        if (notif != null)
+        {
+            if (!notif.read) unreadCount--;
+            notifications.Remove(notif);
+            UpdateBadge();
+            
+            // Update in PlayFab
+            SaveNotificationsToPlayFab();
+        }
+    }
+
+    /// <summary>
+    /// Save notifications back to PlayFab UserData
+    /// </summary>
+    private void SaveNotificationsToPlayFab()
+    {
+        string jsonString = SerializeNotifications(notifications);
+        
+        PlayFabClientAPI.UpdateUserData(new UpdateUserDataRequest
+        {
+            Data = new Dictionary<string, string>
+            {
+                { "Notifications", jsonString }
+            }
+        }, (result) =>
+        {
+            Log("Notifications updated in PlayFab");
+            CheckForNewNotifications(); // Refresh
+        }, (error) =>
+        {
+            Log($"Failed to update notifications: {error.ErrorMessage}", true);
+        });
+    }
+
+    /// <summary>
+    /// Update badge UI
+    /// </summary>
+    private void UpdateBadge()
+    {
+        if (notificationBadge != null)
+        {
+            notificationBadge.SetActive(unreadCount > 0);
+        }
+
+        if (badgeCountText != null)
+        {
+            badgeCountText.text = unreadCount > 99 ? "99+" : unreadCount.ToString();
+        }
+    }
+
+    /// <summary>
+    /// Show popup for important unread notifications (ban/unban/audio)
+    /// </summary>
+    private void ShowImportantNotifications()
+    {
+        foreach (var notif in notifications)
+        {
+            if (notif.read) continue;
+
+            // Show popup for ban/unban/audio notifications
+            if (notif.type == "ban" || notif.type == "unban" || 
+                notif.type == "audio_approved" || notif.type == "audio_deleted")
+            {
+                ShowNotificationPopup(notif);
+                break; // Show only first unread important notification
+            }
+        }
+    }
+
+    /// <summary>
+    /// Show a notification popup
+    /// </summary>
+    private void ShowNotificationPopup(Notification notif)
+    {
+        // Use your existing notification system
+        if (NotifcationPanel.Instance != null)
+        {
+            NotifcationPanel.Instance.ShowNotification($"{notif.title}: {notif.message}");
+        }
+        else
+        {
+            Debug.Log($"[Notification] {notif.title}: {notif.message}");
+        }
+    }
+
+    /// <summary>
+    /// Get all current notifications
+    /// </summary>
+    public List<Notification> GetNotifications()
+    {
+        return new List<Notification>(notifications);
+    }
+
+    /// <summary>
+    /// Get unread count
+    /// </summary>
+    public int GetUnreadCount()
+    {
+        return unreadCount;
+    }
+
+    // JSON Parsing Methods
     private List<Notification> ParseNotificationsFromJson(string json)
     {
         List<Notification> result = new List<Notification>();
         
-        // Find notifications array
-        int notifStart = json.IndexOf("\"notifications\":");
-        if (notifStart == -1) return result;
+        if (string.IsNullOrEmpty(json) || json == "[]") return result;
         
-        int arrayStart = json.IndexOf("[", notifStart);
+        // Find notifications array
+        int arrayStart = json.IndexOf("[");
         if (arrayStart == -1) return result;
         
         int arrayEnd = json.LastIndexOf("]");
@@ -295,6 +383,46 @@ public class NotificationManager : MonoBehaviour
         }
     }
 
+    private string SerializeNotifications(List<Notification> notifs)
+    {
+        if (notifs == null || notifs.Count == 0) return "[]";
+        
+        string result = "[";
+        for (int i = 0; i < notifs.Count; i++)
+        {
+            if (i > 0) result += ",";
+            result += SerializeSingleNotification(notifs[i]);
+        }
+        result += "]";
+        return result;
+    }
+
+    private string SerializeSingleNotification(Notification notif)
+    {
+        string dataJson = "{";
+        dataJson += $"\"reason\":\"{EscapeJson(notif.data.reason)}\",";
+        dataJson += $"\"songId\":\"{EscapeJson(notif.data.songId)}\",";
+        dataJson += $"\"songTitle\":\"{EscapeJson(notif.data.songTitle)}\"";
+        dataJson += "}";
+        
+        string json = "{";
+        json += $"\"id\":\"{EscapeJson(notif.id)}\",";
+        json += $"\"title\":\"{EscapeJson(notif.title)}\",";
+        json += $"\"message\":\"{EscapeJson(notif.message)}\",";
+        json += $"\"type\":\"{EscapeJson(notif.type)}\",";
+        json += $"\"data\":{dataJson},";
+        json += $"\"read\":{(notif.read ? "true" : "false")},";
+        json += $"\"createdAt\":\"{EscapeJson(notif.createdAt)}\"";
+        json += "}";
+        return json;
+    }
+
+    private string EscapeJson(string str)
+    {
+        if (string.IsNullOrEmpty(str)) return "";
+        return str.Replace("\\", "\\\\").Replace("\"", "\\\"").Replace("\n", "\\n").Replace("\r", "\\r");
+    }
+
     private string ExtractStringValue(string json, string key)
     {
         string searchKey = "\"" + key + "\"";
@@ -327,128 +455,6 @@ public class NotificationManager : MonoBehaviour
         return trueIndex != -1 && trueIndex < colonIndex + 10;
     }
 
-    private int ParseUnreadCountFromJson(string json)
-    {
-        string searchKey = "\"unreadCount\"";
-        int keyIndex = json.IndexOf(searchKey);
-        if (keyIndex == -1) return 0;
-
-        int colonIndex = json.IndexOf(":", keyIndex);
-        if (colonIndex == -1) return 0;
-
-        int commaIndex = json.IndexOf(",", colonIndex);
-        int braceIndex = json.IndexOf("}", colonIndex);
-        
-        int endIndex = commaIndex != -1 && commaIndex < braceIndex ? commaIndex : braceIndex;
-        if (endIndex == -1) return 0;
-
-        string valueStr = json.Substring(colonIndex + 1, endIndex - colonIndex - 1).Trim();
-        
-        int value;
-        if (int.TryParse(valueStr, out value))
-        {
-            return value;
-        }
-        
-        return 0;
-    }
-
-    private void OnGetNotificationsFailure(PlayFabError error)
-    {
-        Log($"Failed to get notifications: {error.ErrorMessage}", true);
-    }
-
-    private void OnUnreadCountSuccess(ExecuteCloudScriptResult result)
-    {
-        if (result.FunctionResult == null) return;
-
-        try
-        {
-            string jsonString = result.FunctionResult.ToString();
-            unreadCount = ParseUnreadCountFromJson(jsonString);
-            UpdateBadge();
-            OnUnreadCountChanged?.Invoke(unreadCount);
-        }
-        catch (System.Exception e)
-        {
-            Log($"Failed to parse unread count: {e.Message}", true);
-        }
-    }
-
-    private void OnError(PlayFabError error)
-    {
-        Log($"PlayFab Error: {error.ErrorMessage}", true);
-    }
-
-    /// <summary>
-    /// Update badge UI
-    /// </summary>
-    private void UpdateBadge()
-    {
-        if (notificationBadge != null)
-        {
-            notificationBadge.SetActive(unreadCount > 0);
-        }
-
-        if (badgeCountText != null)
-        {
-            badgeCountText.text = unreadCount > 99 ? "99+" : unreadCount.ToString();
-        }
-    }
-
-    /// <summary>
-    /// Show popup for important unread notifications (ban/unban/audio)
-    /// </summary>
-    private void ShowImportantNotifications()
-    {
-        foreach (var notif in notifications)
-        {
-            if (notif.read) continue;
-
-            // Show popup for ban/unban/audio notifications
-            if (notif.type == "ban" || notif.type == "unban" || 
-                notif.type == "audio_approved" || notif.type == "audio_deleted")
-            {
-                ShowNotificationPopup(notif);
-            }
-        }
-    }
-
-    /// <summary>
-    /// Show a notification popup
-    /// </summary>
-    private void ShowNotificationPopup(Notification notif)
-    {
-        // Use your existing notification system
-        if (NotifcationPanel.Instance != null)
-        {
-            NotifcationPanel.Instance.ShowNotification($"{notif.title}: {notif.message}");
-        }
-        else
-        {
-            Debug.Log($"[Notification] {notif.title}: {notif.message}");
-        }
-
-        // Auto-mark as read after showing
-        MarkAsRead(notif.id);
-    }
-
-    /// <summary>
-    /// Get all current notifications
-    /// </summary>
-    public List<Notification> GetNotifications()
-    {
-        return new List<Notification>(notifications);
-    }
-
-    /// <summary>
-    /// Get unread count
-    /// </summary>
-    // public int GetUnreadCount()
-    // {
-    //     return unreadCount;
-    // }
-
     private void Log(string message, bool isError = false)
     {
         if (!enableDebugLogs) return;
@@ -462,23 +468,6 @@ public class NotificationManager : MonoBehaviour
     void OnDestroy()
     {
         StopNotificationChecking();
-    }
-
-    // Response classes
-    [Serializable]
-    public class NotificationResponse
-    {
-        public bool success;
-        public List<Notification> notifications;
-        public int unreadCount;
-        public int total;
-    }
-
-    [Serializable]
-    public class UnreadCountResponse
-    {
-        public bool success;
-        public int unreadCount;
     }
 }
 
@@ -500,5 +489,4 @@ public class NotificationData
     public string reason;
     public string songId;
     public string songTitle;
-}
 }

@@ -1012,25 +1012,38 @@
   }
 
   /* ── Resolve raw NFT IDs / tokens → human-readable character names ──
-     The game stores NFT IDs like "COL-MSA..." in UnlockedCharacters.
-     We match against the loaded NFT library; if no match we keep the value as-is. */
+     The game stores NFT collection IDs like "COL-MSA..." in UnlockedCharacters.
+     Strategy:
+       1. If the id is already a known character name → use it directly.
+       2. Match id against nft.id in the loaded NFT library.
+       3. Extract character name from the matched nft.name (first word before " — ").
+       4. Fallback: return the raw id so nothing is silently dropped. */
   function _resolveCharacterNames(rawIds) {
     if (!rawIds || !rawIds.length) return [];
+    const knownNames = ['Katsumi', 'Kiko', 'Bee', 'Chyna'];
+    const nfts = state.nfts || [];
+
     return rawIds.map(id => {
-      // Check if it already looks like a plain character name
-      const knownNames = ['Katsumi', 'Kiko', 'Bee', 'Chyna'];
-      if (knownNames.some(n => n.toLowerCase() === String(id).toLowerCase())) return id;
-      // Try to match against NFT library by id or name prefix
-      const nft = (state.nfts || []).find(n =>
-        n.id === id ||
-        n.id?.toLowerCase() === String(id).toLowerCase() ||
-        String(id).toLowerCase().startsWith(n.name?.split(' ')[0]?.toLowerCase() || '___')
-      );
-      if (nft) {
-        // Extract base character name from nft.name (e.g. "Katsumi — Shiny Edition" → "Katsumi")
-        return nft.name.split('—')[0].trim().split(' ')[0];
+      const s = String(id);
+
+      // 1. Already a plain character name
+      const direct = knownNames.find(n => n.toLowerCase() === s.toLowerCase());
+      if (direct) return direct;
+
+      // 2. Match against NFT library by exact id
+      const byId = nfts.find(n => n.id === s);
+      if (byId) {
+        // Extract first word before " — " or space
+        const base = (byId.name || '').split(/\s*—\s*/)[0].trim().split(' ')[0];
+        return base || byId.name;
       }
-      return id; // fallback: show raw id
+
+      // 3. The id might start with a character's first name token
+      const byPrefix = knownNames.find(n => s.toLowerCase().includes(n.toLowerCase()));
+      if (byPrefix) return byPrefix;
+
+      // 4. Fallback — show raw id so it's visible in the UI
+      return s;
     });
   }
 
@@ -1063,18 +1076,15 @@
       state.allUsers     = users;
       state.filteredUsers = users;
 
-      /* Fetch character data for each user — resolve NFT IDs to character names */
+      /* Fetch character data for each user */
       for (const user of users) {
         try {
           const ud = await KangiService.getUserCharacters(user.playFabId);
-          const rawIds = ud.unlockedCharacters || [];
-          // rawIds may be NFT collection IDs (COL-...) or plain names
-          // Resolve against the loaded NFT library
-          user.unlockedCharacters     = rawIds;
-          user.unlockedCharacterNames = _resolveCharacterNames(rawIds);
+          user.unlockedCharacters     = ud.unlockedCharacters || [];
+          user.unlockedCharacterNames = null; // resolved lazily when panel opens
         } catch (_) {
           user.unlockedCharacters     = [];
-          user.unlockedCharacterNames = [];
+          user.unlockedCharacterNames = null;
         }
       }
 
@@ -1110,7 +1120,7 @@
       card.dataset.user = JSON.stringify(user);
 
       const initial        = (user.displayName || '?').charAt(0).toUpperCase();
-      const characterCount = (user.unlockedCharacterNames || user.unlockedCharacters || []).length;
+      const characterCount = (user.unlockedCharacters || []).length;
 
       card.innerHTML = `
         <div class="user-card-left">
@@ -1396,9 +1406,12 @@
     if (el.modalActionAlert)    el.modalActionAlert.classList.add('hidden');
 
     const initial       = (user.displayName || '?').charAt(0).toUpperCase();
-    const unlockedChars = user.unlockedCharacters     || [];
-    const unlockedNames = user.unlockedCharacterNames || unlockedChars;
+    // Resolve lazily here — NFTs are guaranteed loaded by the time panel opens
+    const rawIds        = user.unlockedCharacters || [];
+    const unlockedNames = rawIds.length > 0 ? _resolveCharacterNames(rawIds) : [];
     const allCharacters = ['Katsumi', 'Kiko', 'Bee', 'Chyna'];
+
+    console.log('[Kangi] Panel open for:', user.displayName, '| rawIds:', rawIds, '| resolved:', unlockedNames);
 
     setTimeout(() => {
       el.userDetailsBody.innerHTML = `
@@ -1450,12 +1463,15 @@
 
         <!-- Characters -->
         <div class="up-section">
-          <div class="up-section-title">Unlocked Characters (${unlockedNames.length} / ${allCharacters.length})</div>
+          <div class="up-section-title">Unlocked Characters (${rawIds.length} / ${allCharacters.length})</div>
           <div class="up-chars-grid">
             ${allCharacters.map(char => {
+              // Check by resolved name OR by raw id containing the character name
               const isUnlocked = unlockedNames.some(n =>
                 n.toLowerCase() === char.toLowerCase() ||
                 n.toLowerCase().startsWith(char.toLowerCase())
+              ) || rawIds.some(id =>
+                String(id).toLowerCase().includes(char.toLowerCase())
               );
               // Find matching NFT for image
               const matchedNft = isUnlocked

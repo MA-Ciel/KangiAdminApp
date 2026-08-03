@@ -1474,27 +1474,64 @@ handlers.adminUserWorkflow = function (args, context) {
     // ====================================================================================
     // G. GET PLAYER CHARACTERS — Read UnlockedCharacters from regular UserData
     // ====================================================================================
+    // G. GET PLAYER CHARACTERS — Read UnlockedCharacters from both UserData AND ReadOnlyData
+    //    (supports legacy accounts that still have data in ReadOnly)
+    // ====================================================================================
     if (action === "getPlayerCharacters") {
         var gcPfId = args.playFabId || "";
         if (!gcPfId) return { success: false, unlockedCharacters: [], error: "playFabId required." };
 
         try {
-            var gcResult = server.GetUserData({
-                PlayFabId: gcPfId,
-                Keys: ["UnlockedCharacters"]
-            });
-
-            var raw = "";
-            if (gcResult.Data && gcResult.Data["UnlockedCharacters"]) {
-                raw = gcResult.Data["UnlockedCharacters"].Value || "";
-            }
-
             var chars = [];
-            if (raw) {
-                try { chars = JSON.parse(raw); } catch (e) { chars = []; }
+
+            // 1. Read from regular UserData
+            try {
+                var gcResult = server.GetUserData({
+                    PlayFabId: gcPfId,
+                    Keys: ["UnlockedCharacters"]
+                });
+                if (gcResult.Data && gcResult.Data["UnlockedCharacters"] && gcResult.Data["UnlockedCharacters"].Value) {
+                    var parsed = JSON.parse(gcResult.Data["UnlockedCharacters"].Value);
+                    if (Array.isArray(parsed)) {
+                        chars = chars.concat(parsed);
+                    }
+                }
+            } catch (e) {}
+
+            // 2. Read from ReadOnly UserData (legacy — older accounts wrote here)
+            try {
+                var gcReadOnly = server.GetUserReadOnlyData({
+                    PlayFabId: gcPfId,
+                    Keys: ["UnlockedCharacters"]
+                });
+                if (gcReadOnly.Data && gcReadOnly.Data["UnlockedCharacters"] && gcReadOnly.Data["UnlockedCharacters"].Value) {
+                    var parsedRO = JSON.parse(gcReadOnly.Data["UnlockedCharacters"].Value);
+                    if (Array.isArray(parsedRO)) {
+                        // Merge, deduplicate
+                        for (var ci = 0; ci < parsedRO.length; ci++) {
+                            if (chars.indexOf(parsedRO[ci]) === -1) {
+                                chars.push(parsedRO[ci]);
+                            }
+                        }
+                    }
+                }
+            } catch (e) {}
+
+            // 3. If ReadOnly had data but UserData didn't, migrate it to UserData now
+            if (chars.length > 0) {
+                try {
+                    var existingUserData = server.GetUserData({ PlayFabId: gcPfId, Keys: ["UnlockedCharacters"] });
+                    var hasUserData = existingUserData.Data && existingUserData.Data["UnlockedCharacters"];
+                    if (!hasUserData) {
+                        var migrateData = {};
+                        migrateData["UnlockedCharacters"] = JSON.stringify(chars);
+                        server.UpdateUserData({ PlayFabId: gcPfId, Data: migrateData, Permission: "Public" });
+                        log.info("Migrated UnlockedCharacters from ReadOnly to UserData for: " + gcPfId);
+                    }
+                } catch (e) {}
             }
 
-            return { success: true, unlockedCharacters: Array.isArray(chars) ? chars : [] };
+            return { success: true, unlockedCharacters: chars };
         } catch (e) {
             return { success: false, unlockedCharacters: [], error: e.message || "Failed to read player data." };
         }

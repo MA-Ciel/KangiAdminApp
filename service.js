@@ -351,6 +351,39 @@ const KangiService = (function () {
     });
   }
 
+  /* ── Support / Admin Inbox ── */
+  function _callSupportScript(action, args) {
+    return new Promise((resolve, reject) => {
+      PlayFabClientSDK.ExecuteCloudScript(
+        {
+          FunctionName:            'supportWorkflow',
+          FunctionParameter:       { action, ...args },
+          GeneratePlayStreamEvent: true
+        },
+        (result, error) => {
+          if (error) { reject(_friendlyError(error)); return; }
+          const fn = result?.data?.FunctionResult;
+          if (!fn) { reject('No response from server.'); return; }
+          if (fn.error) { reject(fn.error); return; }
+          resolve(fn);
+        }
+      );
+    });
+  }
+
+  /* Get all user support messages (admin only) */
+  function getSupportMessages() { return _callSupportScript('getMessages', {}); }
+
+  /* Reply to a support message */
+  function replyToMessage(messageId, reply) {
+    return _callSupportScript('replyMessage', { messageId, reply });
+  }
+
+  /* Delete a support message */
+  function deleteSupportMessage(messageId) {
+    return _callSupportScript('deleteMessage', { messageId });
+  }
+
   /* ── Public API ── */
   return {
     init,
@@ -373,7 +406,10 @@ const KangiService = (function () {
     unbanUser,
     getUserCharacters,
     sendNotification,
-    getNotifications
+    getNotifications,
+    getSupportMessages,
+    replyToMessage,
+    deleteSupportMessage
   };
 
 })();

@@ -2333,3 +2333,123 @@ input::placeholder, textarea::placeholder { color: var(--text-3); }
   color: var(--text-3);
   text-align: center;
 }
+
+/* ============================================================
+   MESSAGES VIEW — Admin Inbox
+   ============================================================ */
+
+.msg-card {
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  background: rgba(27, 12, 54, 0.65);
+  margin-bottom: 0.85rem;
+  overflow: hidden;
+  transition: border-color var(--transition);
+}
+.msg-card:hover { border-color: var(--border-2); }
+.msg-card:last-child { margin-bottom: 0; }
+
+.msg-card-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  padding: 0.85rem 1.1rem 0.55rem;
+}
+
+.msg-card-meta {
+  display: flex;
+  flex-direction: column;
+  gap: 0.15rem;
+}
+
+.msg-from {
+  font-size: 0.9rem;
+  font-weight: 700;
+  color: var(--text);
+}
+
+.msg-id {
+  font-size: 0.7rem;
+  color: var(--text-3);
+}
+
+.msg-time {
+  font-size: 0.72rem;
+  color: var(--text-3);
+}
+
+.msg-body {
+  padding: 0.4rem 1.1rem 0.85rem;
+  font-size: 0.88rem;
+  color: var(--text-2);
+  line-height: 1.55;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+.msg-reply-block {
+  margin: 0 1.1rem 0.85rem;
+  padding: 0.75rem 1rem;
+  border-left: 3px solid rgba(74, 222, 128, 0.5);
+  background: rgba(74, 222, 128, 0.06);
+  border-radius: 0 var(--radius) var(--radius) 0;
+}
+
+.msg-reply-label {
+  display: block;
+  font-size: 0.68rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--green);
+  margin-bottom: 0.3rem;
+}
+
+.msg-reply-text {
+  font-size: 0.85rem;
+  color: var(--text-2);
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+.msg-actions {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  padding: 0.65rem 1.1rem 0.9rem;
+  border-top: 1px solid var(--border);
+  background: rgba(20, 8, 40, 0.4);
+  flex-wrap: wrap;
+}
+
+.msg-reply-row {
+  display: flex;
+  flex: 1;
+  gap: 0.55rem;
+  align-items: center;
+  min-width: 200px;
+}
+
+.msg-reply-input {
+  flex: 1;
+  padding: 0.5rem 0.9rem;
+  border-radius: 999px;
+  border: 1px solid var(--border);
+  background: rgba(27, 12, 54, 0.8);
+  font-size: 0.82rem;
+  color: var(--text);
+  outline: none;
+  transition: all var(--transition);
+}
+
+.msg-reply-input:focus {
+  border-color: var(--pink);
+  box-shadow: 0 0 10px var(--pink-glow);
+}
+
+.msg-delete-btn {
+  flex-shrink: 0;
+  margin-left: auto;
+}

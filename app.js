@@ -124,6 +124,7 @@
     sounds:    { title: 'Sounds Library', sub: 'Approve or delete audio files submitted to the server' },
     redeem:    { title: 'Redeem',     sub: 'Verify and process a one-time QR code redemption' },
     users:     { title: 'User Management', sub: 'Grant or revoke administrator access for platform users' },
+    messages:  { title: 'User Messages', sub: 'Support messages sent by players from the app' },
     settings:  { title: 'Settings & Account', sub: 'Manage administrator profile, application settings, and account session' }
   };
 
@@ -148,6 +149,7 @@
     _bindUserManagement();
     _bindUserSearch();
     _bindUserModals();
+    _bindMessages();
   }
 
   /* ================================================================
@@ -326,6 +328,9 @@
     }
     if (name === 'users') {
       await _loadUsers();
+    }
+    if (name === 'messages') {
+      await _loadMessages();
     }
   }
 
@@ -1592,6 +1597,144 @@
       if (diff < 86400) return `${Math.floor(diff / 3600)}h ago`;
       if (diff < 604800) return `${Math.floor(diff / 86400)}d ago`;
       return time.toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
+    } catch (_) { return ''; }
+  }
+
+  /* ================================================================
+     MESSAGES — Admin inbox for user support messages
+     ================================================================ */
+  function _bindMessages() {
+    document.getElementById('refreshMessagesBtn')
+      ?.addEventListener('click', _loadMessages);
+  }
+
+  async function _loadMessages() {
+    const list = document.getElementById('messagesList');
+    const alert = document.getElementById('messagesAlert');
+    if (!list) return;
+
+    list.innerHTML = `
+      <div class="empty-state">
+        <div class="btn-loader" style="width:22px;height:22px;border-width:3px;"></div>
+        <p>Loading messages…</p>
+      </div>`;
+
+    try {
+      const res = await KangiService.getSupportMessages();
+      const messages = (res && Array.isArray(res.messages)) ? res.messages : [];
+
+      if (alert) {
+        _alert(alert, 'info',
+          `${messages.length} message${messages.length !== 1 ? 's' : ''} · ${res.openCount || 0} open`);
+        setTimeout(() => alert.classList.add('hidden'), 3000);
+      }
+
+      _renderMessages(messages);
+    } catch (err) {
+      list.innerHTML = `<div class="empty-state"><p style="color:var(--red);">Failed to load messages.</p></div>`;
+      if (alert) _alert(alert, 'error', typeof err === 'string' ? err : 'Could not load messages.');
+    }
+  }
+
+  function _renderMessages(messages) {
+    const list = document.getElementById('messagesList');
+    if (!list) return;
+
+    if (!messages.length) {
+      list.innerHTML = `
+        <div class="empty-state">
+          <svg viewBox="0 0 20 20" fill="currentColor" style="width:40px;height:40px;opacity:.4;color:var(--pink);">
+            <path d="M2 5a2 2 0 012-2h7a2 2 0 012 2v4a2 2 0 01-2 2H9l-3 3v-3H4a2 2 0 01-2-2V5z"/>
+          </svg>
+          <p>No messages yet</p>
+        </div>`;
+      return;
+    }
+
+    list.innerHTML = '';
+    messages.forEach(msg => {
+      const isOpen    = msg.status === 'open';
+      const hasReply  = !!msg.adminReply;
+      const timeStr   = _formatMsgTime(msg.createdAt);
+
+      const card = document.createElement('div');
+      card.className = 'msg-card';
+      card.innerHTML = `
+        <div class="msg-card-header">
+          <div class="msg-card-meta">
+            <span class="msg-from">${_esc(msg.displayName || msg.playFabId)}</span>
+            <span class="msg-id">${_esc(msg.playFabId)}</span>
+          </div>
+          <div style="display:flex;align-items:center;gap:0.6rem;">
+            <span class="chip ${isOpen ? 'chip--red' : 'chip--green'}">${isOpen ? 'Open' : 'Replied'}</span>
+            <span class="msg-time">${_esc(timeStr)}</span>
+          </div>
+        </div>
+        <div class="msg-body">${_esc(msg.body)}</div>
+        ${hasReply ? `
+          <div class="msg-reply-block">
+            <span class="msg-reply-label">Your reply · ${_esc(_formatMsgTime(msg.repliedAt))}</span>
+            <div class="msg-reply-text">${_esc(msg.adminReply)}</div>
+          </div>` : ''}
+        <div class="msg-actions">
+          ${isOpen ? `
+            <div class="msg-reply-row">
+              <input class="msg-reply-input" type="text" placeholder="Type a reply…" />
+              <button class="btn btn-primary btn-sm msg-send-btn">Reply</button>
+            </div>` : ''}
+          <button class="btn btn-danger btn-sm msg-delete-btn">Delete</button>
+        </div>`;
+
+      // Reply
+      const replyInput = card.querySelector('.msg-reply-input');
+      const replyBtn   = card.querySelector('.msg-send-btn');
+      if (replyBtn && replyInput) {
+        replyBtn.addEventListener('click', async () => {
+          const replyText = replyInput.value.trim();
+          if (!replyText) return;
+          replyBtn.disabled = true;
+          replyBtn.textContent = 'Sending…';
+          try {
+            await KangiService.replyToMessage(msg.id, replyText);
+            await _loadMessages();
+          } catch (e) {
+            replyBtn.disabled = false;
+            replyBtn.textContent = 'Reply';
+            const a = document.getElementById('messagesAlert');
+            if (a) _alert(a, 'error', 'Reply failed.');
+          }
+        });
+
+        // Allow Enter key to send
+        replyInput.addEventListener('keydown', e => {
+          if (e.key === 'Enter') replyBtn.click();
+        });
+      }
+
+      // Delete
+      card.querySelector('.msg-delete-btn').addEventListener('click', async () => {
+        if (!confirm('Delete this message?')) return;
+        try {
+          await KangiService.deleteSupportMessage(msg.id);
+          await _loadMessages();
+        } catch (e) {
+          const a = document.getElementById('messagesAlert');
+          if (a) _alert(a, 'error', 'Delete failed.');
+        }
+      });
+
+      list.appendChild(card);
+    });
+  }
+
+  function _formatMsgTime(isoTime) {
+    try {
+      const t = new Date(isoTime);
+      const diff = (Date.now() - t.getTime()) / 1000;
+      if (diff < 60)    return 'Just now';
+      if (diff < 3600)  return `${Math.floor(diff / 60)}m ago`;
+      if (diff < 86400) return `${Math.floor(diff / 3600)}h ago`;
+      return t.toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
     } catch (_) { return ''; }
   }
 

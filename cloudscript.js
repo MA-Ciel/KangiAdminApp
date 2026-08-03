@@ -1545,3 +1545,139 @@ handlers.adminUserWorkflow = function (args, context) {
 
     return { error: "No matching action found in adminUserWorkflow." };
 };
+
+// ====================================================================================
+// SUPPORT / CONTACT ADMIN WORKFLOW
+// Users send messages via ContactAdmin.cs → stored in Title Internal Data.
+// The admin web dashboard reads and replies via this same handler.
+// ====================================================================================
+
+handlers.supportWorkflow = function (args, context) {
+    var action      = args.action;
+    var INBOX_KEY   = "AdminInbox";
+
+    // ── Helper: read the inbox array ──
+    function _readInbox() {
+        var raw = server.GetTitleInternalData({ Keys: [INBOX_KEY] });
+        if (raw.Data && raw.Data[INBOX_KEY]) {
+            try { return JSON.parse(raw.Data[INBOX_KEY]); } catch (e) {}
+        }
+        return [];
+    }
+
+    // ── Helper: save the inbox array ──
+    function _saveInbox(list) {
+        // Keep newest 200 messages max to stay within PlayFab size limits
+        if (list.length > 200) list = list.slice(0, 200);
+        server.SetTitleInternalData({
+            Key:   INBOX_KEY,
+            Value: JSON.stringify(list)
+        });
+    }
+
+    // ────────────────────────────────────────────────────────────────────────
+    // A. USER → send a message to the admin
+    // ────────────────────────────────────────────────────────────────────────
+    if (action === "sendMessage") {
+        var body = (args.body || "").trim();
+        if (!body) return { success: false, error: "Message cannot be empty." };
+
+        // Resolve display name
+        var displayName = "";
+        try {
+            var info = server.GetUserAccountInfo({ PlayFabId: currentPlayerId });
+            displayName = (info.UserInfo && info.UserInfo.TitleInfo && info.UserInfo.TitleInfo.DisplayName)
+                ? info.UserInfo.TitleInfo.DisplayName
+                : currentPlayerId;
+        } catch (e) {
+            displayName = currentPlayerId;
+        }
+
+        var msg = {
+            id:          generateId("msg"),
+            playFabId:   currentPlayerId,
+            displayName: displayName,
+            body:        body,
+            status:      "open",        // open | replied
+            adminReply:  "",
+            createdAt:   new Date().toISOString(),
+            repliedAt:   ""
+        };
+
+        var inbox = _readInbox();
+        inbox.unshift(msg);             // newest first
+        _saveInbox(inbox);
+
+        log.info("Support message received from " + displayName + " (" + currentPlayerId + ")");
+        return { success: true, message: "Message sent to admin.", id: msg.id };
+    }
+
+    // ────────────────────────────────────────────────────────────────────────
+    // B. ADMIN → get all messages
+    // ────────────────────────────────────────────────────────────────────────
+    if (action === "getMessages") {
+        var messages = _readInbox();
+        var open = 0;
+        for (var i = 0; i < messages.length; i++) {
+            if (messages[i].status === "open") open++;
+        }
+        return { success: true, messages: messages, total: messages.length, openCount: open };
+    }
+
+    // ────────────────────────────────────────────────────────────────────────
+    // C. ADMIN → reply to a message
+    //    Stores the reply in the inbox AND sends a notification to the user.
+    // ────────────────────────────────────────────────────────────────────────
+    if (action === "replyMessage") {
+        var targetId   = args.messageId  || "";
+        var replyText  = (args.reply     || "").trim();
+
+        if (!targetId || !replyText)
+            return { success: false, error: "messageId and reply are required." };
+
+        var inbox2 = _readInbox();
+        var found  = false;
+
+        for (var j = 0; j < inbox2.length; j++) {
+            if (inbox2[j].id === targetId) {
+                inbox2[j].status     = "replied";
+                inbox2[j].adminReply = replyText;
+                inbox2[j].repliedAt  = new Date().toISOString();
+                found = true;
+
+                // Push a notification to the user so they see the reply in-game
+                sendNotification(
+                    inbox2[j].playFabId,
+                    "Admin replied to your message",
+                    replyText,
+                    "admin_reply",
+                    { messageId: targetId }
+                );
+                break;
+            }
+        }
+
+        if (!found) return { success: false, error: "Message not found." };
+
+        _saveInbox(inbox2);
+        return { success: true, message: "Reply sent." };
+    }
+
+    // ────────────────────────────────────────────────────────────────────────
+    // D. ADMIN → delete / close a message
+    // ────────────────────────────────────────────────────────────────────────
+    if (action === "deleteMessage") {
+        var delId   = args.messageId || "";
+        var inbox3  = _readInbox();
+        var before  = inbox3.length;
+        inbox3 = inbox3.filter(function (m) { return m.id !== delId; });
+
+        if (inbox3.length === before)
+            return { success: false, error: "Message not found." };
+
+        _saveInbox(inbox3);
+        return { success: true, message: "Message deleted." };
+    }
+
+    return { success: false, error: "Unknown action: " + action };
+};

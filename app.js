@@ -1500,7 +1500,99 @@
         el.userModalActionsBar.style.display = '';
         _updateModalButtons(user);
       }
+
+      /* Load and render the notification list */
+      _loadUserNotifications(user.playFabId);
     }, 220);
+  }
+
+  /* ================================================================
+     USER NOTIFICATIONS — fetch and render inside the details modal
+     ================================================================ */
+  async function _loadUserNotifications(playFabId) {
+    /* Wait for the modal body to be rendered before injecting the section */
+    const container = el.userDetailsBody;
+    if (!container) return;
+
+    /* Append a placeholder section immediately */
+    const section = document.createElement('div');
+    section.className = 'up-section';
+    section.id = 'up-notif-section';
+    section.innerHTML = `
+      <div class="up-section-title">Notifications</div>
+      <div id="up-notif-list" class="up-notif-list">
+        <div class="up-notif-loading">
+          <div class="btn-loader" style="width:18px;height:18px;border-width:2px;"></div>
+          <span>Loading notifications…</span>
+        </div>
+      </div>`;
+    container.appendChild(section);
+
+    try {
+      const res = await KangiService.getNotifications(playFabId);
+      const notifications = (res && Array.isArray(res.notifications)) ? res.notifications : [];
+      const notifList = document.getElementById('up-notif-list');
+      if (!notifList) return;
+
+      /* Update section title with counts */
+      const titleEl = section.querySelector('.up-section-title');
+      if (titleEl) {
+        const unread = notifications.filter(n => !n.read).length;
+        titleEl.textContent = `Notifications (${notifications.length}${unread > 0 ? ` · ${unread} unread` : ''})`;
+      }
+
+      if (!notifications.length) {
+        notifList.innerHTML = `<div class="up-notif-empty">No notifications yet.</div>`;
+        return;
+      }
+
+      const TYPE_META = {
+        ban:            { label: 'Ban',      cls: 'chip--red'    },
+        unban:          { label: 'Unban',    cls: 'chip--green'  },
+        audio_approved: { label: 'Approved', cls: 'chip--teal'   },
+        audio_deleted:  { label: 'Removed',  cls: 'chip--red'    },
+        admin_granted:  { label: 'Admin',    cls: 'chip--purple' },
+        admin_revoked:  { label: 'Revoked',  cls: 'chip--red'    },
+        success:        { label: 'Success',  cls: 'chip--green'  },
+        warning:        { label: 'Warning',  cls: 'chip--yellow' },
+        error:          { label: 'Error',    cls: 'chip--red'    },
+        info:           { label: 'Info',     cls: 'chip--teal'   }
+      };
+
+      notifList.innerHTML = notifications.map(n => {
+        const meta = TYPE_META[n.type] || { label: n.type || 'Info', cls: 'chip--teal' };
+        const timeStr = _formatNotifTime(n.createdAt);
+        const readCls = n.read ? 'up-notif-item--read' : 'up-notif-item--unread';
+        return `
+          <div class="up-notif-item ${readCls}">
+            <div class="up-notif-header">
+              <span class="chip ${meta.cls}" style="font-size:0.6rem;padding:1px 6px;">${_esc(meta.label)}</span>
+              ${!n.read ? '<span class="up-notif-dot"></span>' : ''}
+              <span class="up-notif-time">${_esc(timeStr)}</span>
+            </div>
+            <div class="up-notif-title">${_esc(n.title)}</div>
+            <div class="up-notif-msg">${_esc(n.message)}</div>
+          </div>`;
+      }).join('');
+
+    } catch (err) {
+      const notifList = document.getElementById('up-notif-list');
+      if (notifList) {
+        notifList.innerHTML = `<div class="up-notif-empty" style="color:var(--red);">Could not load notifications.</div>`;
+      }
+    }
+  }
+
+  function _formatNotifTime(isoTime) {
+    try {
+      const time = new Date(isoTime);
+      const diff = (Date.now() - time.getTime()) / 1000; // seconds
+      if (diff < 60)   return 'Just now';
+      if (diff < 3600) return `${Math.floor(diff / 60)}m ago`;
+      if (diff < 86400) return `${Math.floor(diff / 3600)}h ago`;
+      if (diff < 604800) return `${Math.floor(diff / 86400)}d ago`;
+      return time.toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
+    } catch (_) { return ''; }
   }
 
   /* ── Start ──*/

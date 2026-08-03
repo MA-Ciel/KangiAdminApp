@@ -301,6 +301,29 @@ const KangiService = (function () {
     return map[code] || msg;
   }
 
+  /* Fetch all notifications for a given PlayFab ID (admin reading another player's list) */
+  function getNotifications(targetPlayFabId) {
+    return new Promise((resolve, reject) => {
+      PlayFabClientSDK.ExecuteCloudScript(
+        {
+          FunctionName:            'notificationWorkflow',
+          FunctionParameter:       {
+            action:          'getNotifications',
+            targetPlayFabId: targetPlayFabId
+          },
+          GeneratePlayStreamEvent: false
+        },
+        (result, error) => {
+          if (error) { reject(_friendlyError(error)); return; }
+          const fn = result?.data?.FunctionResult;
+          if (!fn) { reject('No response from server.'); return; }
+          if (fn.error) { reject(fn.error); return; }
+          resolve(fn);
+        }
+      );
+    });
+  }
+
   /* Send a custom notification to a user by PlayFab ID */
   function sendNotification(targetPlayFabId, title, message, type, data) {
     return new Promise((resolve, reject) => {
@@ -349,7 +372,8 @@ const KangiService = (function () {
     banUser,
     unbanUser,
     getUserCharacters,
-    sendNotification
+    sendNotification,
+    getNotifications
   };
 
 })();

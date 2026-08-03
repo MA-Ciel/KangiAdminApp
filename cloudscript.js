@@ -756,7 +756,9 @@ handlers.verifyAndRedeemCharacter = function (args, context) {
 
 handlers.notificationWorkflow = function (args, context) {
     var action = args.action;
-    var playFabId = currentPlayerId;
+    // Use targetPlayFabId when provided (admin reading another player's data),
+    // otherwise fall back to the calling player's ID.
+    var playFabId = args.targetPlayFabId || currentPlayerId;
 
     log.info("Notification Workflow | Action: " + action + " | PlayFabId: " + playFabId);
 
@@ -916,7 +918,7 @@ function getUnreadCount(playFabId) {
 function markNotificationAsRead(playFabId, notificationId) {
     try {
         var notifKey = "Notifications";
-        var userDataResult = server.GetUserInternalData({
+        var userDataResult = server.GetUserData({
             PlayFabId: playFabId,
             Keys: [notifKey]
         });
@@ -939,11 +941,12 @@ function markNotificationAsRead(playFabId, notificationId) {
             return { success: false, error: "Notification not found." };
         }
 
-        server.UpdateUserInternalData({
+        server.UpdateUserData({
             PlayFabId: playFabId,
             Data: {
                 Notifications: JSON.stringify(notifications)
-            }
+            },
+            Permission: "Public"
         });
 
         return { success: true, message: "Notification marked as read." };
@@ -956,7 +959,7 @@ function markNotificationAsRead(playFabId, notificationId) {
 function markAllNotificationsAsRead(playFabId) {
     try {
         var notifKey = "Notifications";
-        var userDataResult = server.GetUserInternalData({
+        var userDataResult = server.GetUserData({
             PlayFabId: playFabId,
             Keys: [notifKey]
         });
@@ -970,11 +973,12 @@ function markAllNotificationsAsRead(playFabId) {
             notifications[i].read = true;
         }
 
-        server.UpdateUserInternalData({
+        server.UpdateUserData({
             PlayFabId: playFabId,
             Data: {
                 Notifications: JSON.stringify(notifications)
-            }
+            },
+            Permission: "Public"
         });
 
         return { success: true, message: "All notifications marked as read." };
@@ -987,7 +991,7 @@ function markAllNotificationsAsRead(playFabId) {
 function deleteNotification(playFabId, notificationId) {
     try {
         var notifKey = "Notifications";
-        var userDataResult = server.GetUserInternalData({
+        var userDataResult = server.GetUserData({
             PlayFabId: playFabId,
             Keys: [notifKey]
         });
@@ -1009,11 +1013,12 @@ function deleteNotification(playFabId, notificationId) {
             return { success: false, error: "Notification not found." };
         }
 
-        server.UpdateUserInternalData({
+        server.UpdateUserData({
             PlayFabId: playFabId,
             Data: {
                 Notifications: JSON.stringify(filtered)
-            }
+            },
+            Permission: "Public"
         });
 
         return { success: true, message: "Notification deleted." };
@@ -1107,7 +1112,7 @@ handlers.testNotificationSystem = function(args, context) {
     
     // Test 7: Check Raw Storage
     if (testType === "checkStorage") {
-        var rawData = server.GetUserInternalData({
+        var rawData = server.GetUserData({
             PlayFabId: targetPlayFabId,
             Keys: ["Notifications"]
         });
@@ -1125,11 +1130,12 @@ handlers.testNotificationSystem = function(args, context) {
     
     // Test 8: Clear All Notifications (for testing)
     if (testType === "clearAll") {
-        server.UpdateUserInternalData({
+        server.UpdateUserData({
             PlayFabId: targetPlayFabId,
             Data: {
                 Notifications: JSON.stringify([])
-            }
+            },
+            Permission: "Public"
         });
         return { success: true, message: "All notifications cleared" };
     }

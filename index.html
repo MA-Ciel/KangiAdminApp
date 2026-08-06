@@ -470,37 +470,8 @@
             </div>
           </div>
 
-          <!-- Cloudinary CDN Config -->
-          <div class="card settings-card">
-            <div class="card-header">
-              <h3 class="card-title">
-                <svg viewBox="0 0 20 20" fill="currentColor"><path d="M3 12v3c0 1.657 3.134 3 7 3s7-1.343 7-3v-3c0 1.657-3.134 3-7 3s-7-1.343-7-3z"/><path d="M3 7v3c0 1.657 3.134 3 7 3s7-1.343 7-3V7c0 1.657-3.134 3-7 3S3 8.657 3 7z"/><path d="M17 5c0 1.657-3.134 3-7 3S3 6.657 3 5s3.134-3 7-3 7 1.343 7 3z"/></svg>
-                NFT Image Storage (Cloudinary)
-              </h3>
-            </div>
-            <div class="settings-card-body">
-              <p class="setting-desc" style="margin-bottom:1rem;color:var(--text-2);">
-                NFT images are uploaded to Cloudinary CDN. Default credentials are pre-configured.
-                Override below only if you need a different account.
-              </p>
-              <div class="field-group" style="margin-bottom:0.8rem;">
-                <label for="cloudinaryCloudName">Cloud Name</label>
-                <input id="cloudinaryCloudName" type="text" placeholder="djgvzbxvt" />
-              </div>
-              <div class="field-group" style="margin-bottom:1.2rem;">
-                <label for="cloudinaryUploadPreset">Upload Preset (unsigned)</label>
-                <input id="cloudinaryUploadPreset" type="text" placeholder="Community_Feed" />
-              </div>
-              <div style="display:flex;gap:0.75rem;align-items:center;flex-wrap:wrap;">
-                <button id="saveCloudinaryBtn" class="btn btn-primary btn-sm">
-                  <svg viewBox="0 0 20 20" fill="currentColor" style="width:14px;height:14px;"><path d="M7.707 10.293a1 1 0 10-1.414 1.414l3 3a1 1 0 001.414 0l3-3a1 1 0 00-1.414-1.414L11 11.586V6h5a2 2 0 012 2v7a2 2 0 01-2 2H4a2 2 0 01-2-2V8a2 2 0 012-2h5v5.586l-1.293-1.293zM9 4a1 1 0 012 0v2H9V4z"/></svg>
-                  Save Override
-                </button>
-                <button id="resetCloudinaryBtn" class="btn btn-ghost btn-sm">Reset to Defaults</button>
-              </div>
-              <div id="cloudinaryAlert" class="alert hidden" style="margin-top:0.8rem;"></div>
-            </div>
-          </div>
+          <!-- Cloudinary CDN Config (hidden — credentials hardcoded as defaults) -->
+          <div class="card settings-card" style="display:none;"></div>
 
           <!-- Account Session & Logout -->
           <div class="card settings-card card-danger">

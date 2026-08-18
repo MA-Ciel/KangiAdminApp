@@ -181,10 +181,47 @@
             </div>
             <div class="stat-body"><strong id="statRedeemed">0</strong><span>Redeemed</span></div>
           </div>
+          <div class="stat-card">
+            <div class="stat-icon stat-icon--pink">
+              <svg viewBox="0 0 20 20" fill="currentColor"><path d="M9 6a3 3 0 11-6 0 3 3 0 016 0zM17 6a3 3 0 11-6 0 3 3 0 016 0zM12.93 17c.046-.327.07-.66.07-1a6.97 6.97 0 00-1.5-4.33A5 5 0 0119 16v1h-6.07zM6 11a5 5 0 015 5v1H1v-1a5 5 0 015-5z"/></svg>
+            </div>
+            <div class="stat-body"><strong id="statUsers">0</strong><span>Registered Players</span></div>
+          </div>
         </div>
-        <div class="dash-grid dash-grid--single">
+
+        <div class="dash-grid">
+          <!-- REGISTERED PLAYERS (LIVE PLAYFAB) -->
           <div class="card">
-            <div class="card-header"><h3>Recent TCGs</h3></div>
+            <div class="card-header card-header--between">
+              <div>
+                <h3>Registered Players</h3>
+                <p>Live players registered in PlayFab</p>
+              </div>
+              <button class="btn btn-secondary btn-sm" onclick="document.querySelector('[data-view=users]').click()">
+                Manage Users
+                <svg viewBox="0 0 20 20" fill="currentColor" style="width:14px;height:14px;margin-left:4px;"><path fill-rule="evenodd" d="M7.293 14.707a1 1 0 010-1.414L10.586 10 7.293 6.707a1 1 0 011.414-1.414l4 4a1 1 0 010 1.414l-4 4a1 1 0 01-1.414 0z" clip-rule="evenodd"/></svg>
+              </button>
+            </div>
+            <div id="dashUsersList" class="card-body">
+              <div class="empty-state">
+                <div class="btn-loader" style="width:22px;height:22px;border-width:3px;"></div>
+                <p>Loading registered players from PlayFab…</p>
+              </div>
+            </div>
+          </div>
+
+          <!-- RECENT TCGS -->
+          <div class="card">
+            <div class="card-header card-header--between">
+              <div>
+                <h3>Recent TCGs</h3>
+                <p>Latest batches &amp; QR distribution</p>
+              </div>
+              <button class="btn btn-secondary btn-sm" onclick="document.querySelector('[data-view=manage]').click()">
+                Manage QRs
+                <svg viewBox="0 0 20 20" fill="currentColor" style="width:14px;height:14px;margin-left:4px;"><path fill-rule="evenodd" d="M7.293 14.707a1 1 0 010-1.414L10.586 10 7.293 6.707a1 1 0 011.414-1.414l4 4a1 1 0 010 1.414l-4 4a1 1 0 01-1.414 0z" clip-rule="evenodd"/></svg>
+              </button>
+            </div>
             <div id="recentNftsList" class="card-body">
               <div class="empty-state">
                 <svg viewBox="0 0 40 40" fill="none"><rect x="5" y="5" width="30" height="30" rx="6" stroke="currentColor" stroke-width="2"/><path d="M13 27V13h5l7 9V13h5v14h-5L18 18v9h-5Z" fill="currentColor"/></svg>

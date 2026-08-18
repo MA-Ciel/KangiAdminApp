@@ -45,6 +45,8 @@
     statNfts:       $('statNfts'),
     statCodes:      $('statCodes'),
     statRedeemed:   $('statRedeemed'),
+    statUsers:      $('statUsers'),
+    dashUsersList:  $('dashUsersList'),
     recentList:     $('recentNftsList'),
 
     /* Create */
@@ -377,8 +379,16 @@
      ================================================================ */
   async function _loadAllData() {
     try {
-      const res  = await KangiService.getNfts();
-      state.nfts = (res && Array.isArray(res.nfts)) ? res.nfts : [];
+      const [nftsRes, usersRes] = await Promise.allSettled([
+        KangiService.getNfts(),
+        _fetchAndEnrichUsers()
+      ]);
+
+      state.nfts = (nftsRes.status === 'fulfilled' && nftsRes.value && Array.isArray(nftsRes.value.nfts)) ? nftsRes.value.nfts : [];
+      if (usersRes.status === 'fulfilled' && Array.isArray(usersRes.value)) {
+        state.allUsers = usersRes.value;
+        state.filteredUsers = usersRes.value;
+      }
     } catch (e) {
       console.error('[Kangi] Data load error:', e);
       state.nfts = [];
@@ -388,8 +398,12 @@
 
   function _renderAll() {
     _renderStats();
+    _renderDashboardUsers();
     _renderRecent();
     _renderLibrary();
+    if (state.allUsers && state.allUsers.length && el.usersList) {
+      _renderUsers(state.filteredUsers && state.filteredUsers.length ? state.filteredUsers : state.allUsers);
+    }
   }
 
   /* ─── Stats ─── */
@@ -399,9 +413,11 @@
     _countUp(el.statNfts,     state.nfts.length);
     _countUp(el.statCodes,    codes.length);
     _countUp(el.statRedeemed, redeemed);
+    if (el.statUsers) _countUp(el.statUsers, (state.allUsers || []).length);
   }
 
   function _countUp(el, target) {
+    if (!el) return;
     const start = parseInt(el.textContent) || 0;
     if (start === target) return;
     const step = target > start ? 1 : -1;
@@ -411,6 +427,27 @@
       el.textContent = cur;
       if (cur === target) clearInterval(timer);
     }, 40);
+  }
+
+  /* ─── Registered Users (dashboard) ─── */
+  function _renderDashboardUsers() {
+    if (!el.dashUsersList) return;
+    const users = state.allUsers || [];
+    if (!users.length) {
+      el.dashUsersList.innerHTML = `
+        <div class="empty-state">
+          <svg viewBox="0 0 20 20" fill="currentColor"><path d="M9 6a3 3 0 11-6 0 3 3 0 016 0zM17 6a3 3 0 11-6 0 3 3 0 016 0zM12.93 17c.046-.327.07-.66.07-1a6.97 6.97 0 00-1.5-4.33A5 5 0 0119 16v1h-6.07zM6 11a5 5 0 015 5v1H1v-1a5 5 0 015-5z"/></svg>
+          <p>No registered players yet</p>
+        </div>`;
+      return;
+    }
+
+    el.dashUsersList.innerHTML = '';
+    // Display up to 6 registered users on the dashboard
+    users.slice(0, 6).forEach(user => {
+      const card = _createUserCardElement(user);
+      el.dashUsersList.appendChild(card);
+    });
   }
 
   /* ─── Recent TCGs (dashboard) ─── */
@@ -1121,8 +1158,36 @@
   }
 
   /* ================================================================
-     USER LIST — Load & render all players
+     USER LIST — Fetch, Enrich & Render all players from PlayFab
      ================================================================ */
+  async function _fetchAndEnrichUsers() {
+    try {
+      const res = await KangiService.getAllUsers();
+      const users = (res && Array.isArray(res.users)) ? res.users : [];
+      state.allUsers = users;
+      state.filteredUsers = users;
+
+      /* Fetch character data for each user concurrently */
+      await Promise.allSettled(
+        users.map(async (user) => {
+          try {
+            const ud = await KangiService.getUserCharacters(user.playFabId);
+            user.unlockedCharacters     = ud.unlockedCharacters || [];
+            user.unlockedCharacterNames = null; // resolved lazily when panel opens
+          } catch (_) {
+            user.unlockedCharacters     = [];
+            user.unlockedCharacterNames = null;
+          }
+        })
+      );
+
+      return users;
+    } catch (err) {
+      console.error('[Kangi] Failed to load users from PlayFab:', err);
+      return [];
+    }
+  }
+
   async function _loadUsers() {
     if (!el.usersList) return;
 
@@ -1133,34 +1198,69 @@
       </div>`;
 
     try {
-      const res   = await KangiService.getAllUsers();
-      const users = (res && Array.isArray(res.users)) ? res.users : [];
-
-      state.allUsers     = users;
-      state.filteredUsers = users;
-
-      /* Fetch character data for each user */
-      for (const user of users) {
-        try {
-          const ud = await KangiService.getUserCharacters(user.playFabId);
-          user.unlockedCharacters     = ud.unlockedCharacters || [];
-          user.unlockedCharacterNames = null; // resolved lazily when panel opens
-        } catch (_) {
-          user.unlockedCharacters     = [];
-          user.unlockedCharacterNames = null;
-        }
-      }
-
+      const users = await _fetchAndEnrichUsers();
       _renderUsers(users);
+      _renderStats();
+      _renderDashboardUsers();
 
       if (el.usersAlert) {
-        _alert(el.usersAlert, 'info', `${users.length} player${users.length !== 1 ? 's' : ''} loaded.`);
+        _alert(el.usersAlert, 'info', `${users.length} player${users.length !== 1 ? 's' : ''} loaded from PlayFab.`);
         setTimeout(() => el.usersAlert.classList.add('hidden'), 3000);
       }
     } catch (err) {
       el.usersList.innerHTML = `<div class="empty-state"><p style="color:var(--red);">Failed to load users: ${_esc(String(err))}</p></div>`;
       if (el.usersAlert) _alert(el.usersAlert, 'error', typeof err === 'string' ? err : 'Could not load users.');
     }
+  }
+
+  function _createUserCardElement(user) {
+    const card = document.createElement('div');
+    card.className = 'user-card';
+    card.dataset.playfabid = user.playFabId;
+    card.dataset.user = JSON.stringify(user);
+
+    const initial        = (user.displayName || '?').charAt(0).toUpperCase();
+    const characterCount = (user.unlockedCharacters || []).length;
+
+    card.innerHTML = `
+      <div class="user-card-left">
+        ${user.avatarUrl
+          ? `<img class="user-card-avatar" src="${_esc(user.avatarUrl)}" alt="${_esc(user.displayName)}" />`
+          : `<div class="user-card-avatar user-card-avatar--letter">${_esc(initial)}</div>`
+        }
+      </div>
+      <div class="user-card-info">
+        <div class="user-card-name">
+          ${_esc(user.displayName || 'Unknown')}
+          ${user.isAdmin  ? `<span class="chip chip--purple" style="font-size:0.65rem;">Admin</span>`  : ''}
+          ${user.isBanned ? `<span class="chip chip--red"    style="font-size:0.65rem;">Banned</span>` : ''}
+        </div>
+        <div class="user-card-meta">
+          <span>
+            <svg viewBox="0 0 20 20" fill="currentColor" style="width:11px;height:11px;opacity:.6;"><path d="M2.003 5.884L10 9.882l7.997-3.998A2 2 0 0016 4H4a2 2 0 00-1.997 1.884z"/><path d="M18 8.118l-8 4-8-4V14a2 2 0 002 2h12a2 2 0 002-2V8.118z"/></svg>
+            ${user.email ? _esc(user.email) : '<em style="opacity:.5">no email</em>'}
+          </span>
+          <span>
+            <svg viewBox="0 0 20 20" fill="currentColor" style="width:11px;height:11px;opacity:.6;"><path fill-rule="evenodd" d="M4 4a2 2 0 012-2h4.586A2 2 0 0112 2.586L15.414 6A2 2 0 0116 7.414V16a2 2 0 01-2 2H6a2 2 0 01-2-2V4z" clip-rule="evenodd"/></svg>
+            ${_esc(user.playFabId)}
+          </span>
+          ${user.lastLogin ? `<span>
+            <svg viewBox="0 0 20 20" fill="currentColor" style="width:11px;height:11px;opacity:.6;"><path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm1-12a1 1 0 10-2 0v4a1 1 0 00.293.707l2.828 2.829a1 1 0 101.415-1.415L11 9.586V6z" clip-rule="evenodd"/></svg>
+            Last seen ${new Date(user.lastLogin).toLocaleDateString()}
+          </span>` : ''}
+        </div>
+        <div class="user-card-characters">
+          <svg viewBox="0 0 20 20" fill="currentColor"><path d="M10 9a3 3 0 100-6 3 3 0 000 6zm-7 9a7 7 0 1114 0H3z"/></svg>
+          <span>${characterCount} character${characterCount !== 1 ? 's' : ''} unlocked</span>
+        </div>
+      </div>
+      <div class="user-card-actions">
+        <svg viewBox="0 0 20 20" fill="currentColor" style="width:16px;height:16px;color:var(--text-3);flex-shrink:0;">
+          <path fill-rule="evenodd" d="M7.293 14.707a1 1 0 010-1.414L10.586 10 7.293 6.707a1 1 0 011.414-1.414l4 4a1 1 0 010 1.414l-4 4a1 1 0 01-1.414 0z" clip-rule="evenodd"/>
+        </svg>
+      </div>`;
+
+    return card;
   }
 
   function _renderUsers(users) {
@@ -1177,60 +1277,14 @@
 
     el.usersList.innerHTML = '';
     users.forEach(user => {
-      const card = document.createElement('div');
-      card.className = 'user-card';
-      card.dataset.playfabid = user.playFabId;
-      card.dataset.user = JSON.stringify(user);
-
-      const initial        = (user.displayName || '?').charAt(0).toUpperCase();
-      const characterCount = (user.unlockedCharacters || []).length;
-
-      card.innerHTML = `
-        <div class="user-card-left">
-          ${user.avatarUrl
-            ? `<img class="user-card-avatar" src="${_esc(user.avatarUrl)}" alt="${_esc(user.displayName)}" />`
-            : `<div class="user-card-avatar user-card-avatar--letter">${_esc(initial)}</div>`
-          }
-        </div>
-        <div class="user-card-info">
-          <div class="user-card-name">
-            ${_esc(user.displayName || 'Unknown')}
-            ${user.isAdmin  ? `<span class="chip chip--purple" style="font-size:0.65rem;">Admin</span>`  : ''}
-            ${user.isBanned ? `<span class="chip chip--red"    style="font-size:0.65rem;">Banned</span>` : ''}
-          </div>
-          <div class="user-card-meta">
-            <span>
-              <svg viewBox="0 0 20 20" fill="currentColor" style="width:11px;height:11px;opacity:.6;"><path d="M2.003 5.884L10 9.882l7.997-3.998A2 2 0 0016 4H4a2 2 0 00-1.997 1.884z"/><path d="M18 8.118l-8 4-8-4V14a2 2 0 002 2h12a2 2 0 002-2V8.118z"/></svg>
-              ${user.email ? _esc(user.email) : '<em style="opacity:.5">no email</em>'}
-            </span>
-            <span>
-              <svg viewBox="0 0 20 20" fill="currentColor" style="width:11px;height:11px;opacity:.6;"><path fill-rule="evenodd" d="M4 4a2 2 0 012-2h4.586A2 2 0 0112 2.586L15.414 6A2 2 0 0116 7.414V16a2 2 0 01-2 2H6a2 2 0 01-2-2V4z" clip-rule="evenodd"/></svg>
-              ${_esc(user.playFabId)}
-            </span>
-            ${user.lastLogin ? `<span>
-              <svg viewBox="0 0 20 20" fill="currentColor" style="width:11px;height:11px;opacity:.6;"><path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm1-12a1 1 0 10-2 0v4a1 1 0 00.293.707l2.828 2.829a1 1 0 101.415-1.415L11 9.586V6z" clip-rule="evenodd"/></svg>
-              Last seen ${new Date(user.lastLogin).toLocaleDateString()}
-            </span>` : ''}
-          </div>
-          <div class="user-card-characters">
-            <svg viewBox="0 0 20 20" fill="currentColor"><path d="M10 9a3 3 0 100-6 3 3 0 000 6zm-7 9a7 7 0 1114 0H3z"/></svg>
-            <span>${characterCount} character${characterCount !== 1 ? 's' : ''} unlocked</span>
-          </div>
-        </div>
-        <div class="user-card-actions">
-          <svg viewBox="0 0 20 20" fill="currentColor" style="width:16px;height:16px;color:var(--text-3);flex-shrink:0;">
-            <path fill-rule="evenodd" d="M7.293 14.707a1 1 0 010-1.414L10.586 10 7.293 6.707a1 1 0 011.414-1.414l4 4a1 1 0 010 1.414l-4 4a1 1 0 01-1.414 0z" clip-rule="evenodd"/>
-          </svg>
-        </div>`;
-
+      const card = _createUserCardElement(user);
       el.usersList.appendChild(card);
     });
   }
 
-  /* ── User list click delegation — every card click opens the modal ── */
+  /* ── User list click delegation — clicks on any card (dashboard or list) open modal ── */
   function _bindUserListClicks() {
-    if (!el.usersList) return;
-    el.usersList.addEventListener('click', (e) => {
+    const handleCardClick = (e) => {
       const card = e.target.closest('.user-card');
       if (!card) return;
       try {
@@ -1238,7 +1292,10 @@
       } catch (err) {
         console.error('Failed to parse user data:', err);
       }
-    });
+    };
+
+    if (el.usersList) el.usersList.addEventListener('click', handleCardClick);
+    if (el.dashUsersList) el.dashUsersList.addEventListener('click', handleCardClick);
   }
 
   /* ===================================================================

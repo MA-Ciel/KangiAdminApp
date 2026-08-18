@@ -363,7 +363,7 @@ input::placeholder, textarea::placeholder { color: var(--text-3); }
 @keyframes fadeIn { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: translateY(0); } }
 
 /* ---- Stats Grid ---- */
-.stats-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 1.1rem; }
+.stats-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 1.1rem; }
 .stat-card {
   background: rgba(20, 8, 40, 0.8);
   backdrop-filter: blur(12px);
@@ -390,6 +390,8 @@ input::placeholder, textarea::placeholder { color: var(--text-3); }
 .stat-icon--purple { background: rgba(168, 85, 247, 0.2); color: var(--purple); box-shadow: 0 0 14px var(--purple-glow); }
 .stat-icon--teal { background: rgba(34, 211, 238, 0.2); color: var(--teal); box-shadow: 0 0 14px var(--teal-glow); }
 .stat-icon--green { background: rgba(74, 222, 128, 0.2); color: var(--green); box-shadow: 0 0 14px var(--green-glow); }
+.stat-icon--pink { background: rgba(236, 72, 153, 0.2); color: var(--pink); box-shadow: 0 0 14px var(--pink-glow); }
+.stat-icon--blue { background: rgba(59, 130, 246, 0.2); color: #38bdf8; box-shadow: 0 0 14px rgba(56, 189, 248, 0.3); }
 .stat-body strong { display: block; font-size: 1.7rem; font-weight: 800; letter-spacing: -0.03em; line-height: 1.1; }
 .stat-body span { font-size: 0.8rem; color: var(--text-2); }
 

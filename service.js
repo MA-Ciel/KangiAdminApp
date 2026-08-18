@@ -225,8 +225,13 @@ const KangiService = (function () {
     });
   }
 
-  /* Fetch all registered users from registry */
-  function getAllUsers() { return _callAdminScript('getAllUsers', {}); }
+  /* Fetch all registered users from registry / segment */
+  function getAllUsers(segmentId) { return _callAdminScript('getAllUsers', { segmentId: segmentId || '' }); }
+
+  /* Batch sync players by PlayFab IDs directly into the registry */
+  function syncPlayersByIds(playFabIds) { 
+    return _callAdminScript('syncPlayersByIds', { playFabIds: playFabIds || [] }); 
+  }
 
   /* Ban a user — accepts email, playFabId, and optional duration in days (0 = permanent) */
   function banUser(email, playFabId, durationDays)   { 

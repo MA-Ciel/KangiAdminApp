@@ -1183,6 +1183,7 @@ handlers.testNotificationSystem = function(args, context) {
 // ====================================================================================
 
 handlers.adminUserWorkflow = function (args, context) {
+    var CLOUDSCRIPT_VERSION = "2.6.0-direct-sync";
     var action = args.action;
 
     // ── Shared registry key ──
@@ -1221,6 +1222,45 @@ handlers.adminUserWorkflow = function (args, context) {
         _saveRegistry(list);
     }
 
+    // ── Helper: resolve player by ID ──
+    function _resolvePlayer(targetId, cMap) {
+        if (!targetId) return null;
+        try {
+            var pfInfo = server.GetUserAccountInfo({ PlayFabId: targetId });
+            if (pfInfo && pfInfo.UserInfo) {
+                var uInfo = pfInfo.UserInfo;
+                var dEmail = (uInfo.PrivateInfo && uInfo.PrivateInfo.Email) ? uInfo.PrivateInfo.Email : "";
+                var dName = (uInfo.TitleInfo && uInfo.TitleInfo.DisplayName) ? uInfo.TitleInfo.DisplayName : "";
+                if (!dName && uInfo.Username) dName = uInfo.Username;
+                if (!dName && dEmail) dName = dEmail.split("@")[0];
+                if (!dName || dName === targetId) dName = "Player " + targetId.slice(-4);
+
+                var dAvatar = (uInfo.TitleInfo && uInfo.TitleInfo.AvatarUrl) ? uInfo.TitleInfo.AvatarUrl : "";
+                var lastSeen = (uInfo.TitleInfo && uInfo.TitleInfo.LastLogin) ? uInfo.TitleInfo.LastLogin : new Date().toISOString();
+
+                var uData = {};
+                try {
+                    var udRes = server.GetUserData({ PlayFabId: targetId, Keys: ["IsAdmin", "IsBanned"] });
+                    uData = udRes.Data || {};
+                } catch (e) {}
+
+                return {
+                    playFabId:   targetId,
+                    displayName: dName,
+                    username:    uInfo.Username || "",
+                    email:       dEmail,
+                    avatarUrl:   dAvatar,
+                    isAdmin:     (uData.IsAdmin && uData.IsAdmin.Value === "true") || (cMap[targetId] && cMap[targetId].isAdmin) || false,
+                    isBanned:    (uData.IsBanned && uData.IsBanned.Value === "true") || (cMap[targetId] && cMap[targetId].isBanned) || false,
+                    lastLogin:   lastSeen
+                };
+            }
+        } catch (e) {
+            log.error("Could not resolve player " + targetId + ": " + JSON.stringify(e));
+        }
+        return null;
+    }
+
     // ====================================================================================
     // A. REGISTER USER — Called on every login to keep the registry up-to-date
     // ====================================================================================
@@ -1248,15 +1288,164 @@ handlers.adminUserWorkflow = function (args, context) {
         };
 
         _upsertRegistry(entry);
-        return { success: true, message: "User registered in registry." };
+        return { success: true, version: CLOUDSCRIPT_VERSION, message: "User registered in registry." };
     }
 
     // ====================================================================================
-    // B. GET ALL USERS — Return the full registry list
+    // B. GET ALL USERS — Fetch all real players directly from PlayFab Segments & Registry
     // ====================================================================================
     if (action === "getAllUsers") {
-        var users = _readRegistry();
-        return { success: true, users: users, total: users.length };
+        var registry = _readRegistry();
+        var registryMap = {};
+        for (var r = 0; r < registry.length; r++) {
+            if (registry[r] && registry[r].playFabId) {
+                registryMap[registry[r].playFabId] = registry[r];
+            }
+        }
+
+        var segmentId = args.segmentId || "39DB56B86E752167";
+        var allPlayers = [];
+        var foundViaSegment = false;
+        var segError = null;
+        var profilesCount = 0;
+
+        if (segmentId) {
+            try {
+                var playersRes = server.GetPlayersInSegment({
+                    SegmentId: segmentId,
+                    MaxBatchSize: 100,
+                    SecondsToLive: 300
+                });
+
+                if (playersRes && playersRes.PlayerProfiles) {
+                    profilesCount = playersRes.PlayerProfiles.length;
+                    if (playersRes.PlayerProfiles.length > 0) {
+                        foundViaSegment = true;
+                        for (var p = 0; p < playersRes.PlayerProfiles.length; p++) {
+                            var prof = playersRes.PlayerProfiles[p];
+                            var pfId = prof.PlayerId;
+                            var regEntry = registryMap[pfId] || {};
+
+                            var email = regEntry.email || "";
+                            if (!email && prof.ContactEmailAddresses && prof.ContactEmailAddresses.length > 0) {
+                                email = prof.ContactEmailAddresses[0].EmailAddress || "";
+                            }
+                            if (!email && prof.LinkedAccounts) {
+                                for (var la = 0; la < prof.LinkedAccounts.length; la++) {
+                                    if (prof.LinkedAccounts[la].Email) {
+                                        email = prof.LinkedAccounts[la].Email;
+                                        break;
+                                    }
+                                }
+                            }
+
+                            var displayName = prof.DisplayName || regEntry.displayName || pfId;
+                            var avatarUrl   = prof.AvatarUrl || regEntry.avatarUrl || "";
+                            var lastLogin   = prof.LastLogin || regEntry.lastLogin || "";
+
+                            allPlayers.push({
+                                playFabId:   pfId,
+                                displayName: displayName,
+                                email:       email,
+                                avatarUrl:   avatarUrl,
+                                isAdmin:     regEntry.isAdmin || false,
+                                isBanned:    regEntry.isBanned || (prof.BannedUntil ? new Date(prof.BannedUntil) > new Date() : false),
+                                lastLogin:   lastLogin
+                            });
+                        }
+                    }
+                }
+            } catch (errSeg) {
+                segError = typeof errSeg === "object" ? (errSeg.errorMessage || errSeg.error || JSON.stringify(errSeg)) : String(errSeg);
+                log.error("GetPlayersInSegment error: " + segError);
+            }
+        }
+
+        // If segment retrieval succeeded, merge remaining registry items and save to registry cache
+        if (foundViaSegment && allPlayers.length > 0) {
+            for (var k in registryMap) {
+                var exists = false;
+                for (var ap = 0; ap < allPlayers.length; ap++) {
+                    if (allPlayers[ap].playFabId === k) { exists = true; break; }
+                }
+                if (!exists) allPlayers.push(registryMap[k]);
+            }
+            _saveRegistry(allPlayers);
+            return { 
+                success: true, 
+                version: CLOUDSCRIPT_VERSION, 
+                users: allPlayers, 
+                total: allPlayers.length, 
+                source: "playfab_segment",
+                profilesInSegment: profilesCount,
+                segmentIdUsed: segmentId 
+            };
+        }
+
+        // If segment didn't return players, auto-resolve known PlayFab IDs to populate registry
+        var knownIds = [
+            "C459BC7F6EE8DD48",
+            "EFC3868BCE148234",
+            "7BC9615A4B771F2A",
+            "86A4785CB2B0B8C0",
+            "65993814E5A60679",
+            "E4BD1A54A9B48623"
+        ];
+        var autoResolved = false;
+        for (var ki = 0; ki < knownIds.length; ki++) {
+            var kId = knownIds[ki];
+            if (!registryMap[kId]) {
+                var resolved = _resolvePlayer(kId, registryMap);
+                if (resolved) {
+                    registryMap[kId] = resolved;
+                    registry.push(resolved);
+                    autoResolved = true;
+                }
+            }
+        }
+        if (autoResolved) {
+            _saveRegistry(registry);
+        }
+
+        // Return registry
+        return { 
+            success: true, 
+            version: CLOUDSCRIPT_VERSION, 
+            users: registry, 
+            total: registry.length, 
+            source: autoResolved ? "playfab_direct_lookup" : "registry", 
+            segmentError: segError,
+            segmentIdUsed: segmentId,
+            profilesInSegment: profilesCount
+        };
+    }
+
+    // ====================================================================================
+    // B2. SYNC PLAYERS BY IDS — Accepts list of PlayFab IDs, fetches live account info
+    // ====================================================================================
+    if (action === "syncPlayersByIds") {
+        var ids = args.playFabIds || [];
+        if (typeof ids === "string") ids = ids.split(/[\s,]+/);
+        var currentReg = _readRegistry();
+        var cMap = {};
+        for (var ci = 0; ci < currentReg.length; ci++) {
+            if (currentReg[ci] && currentReg[ci].playFabId) cMap[currentReg[ci].playFabId] = currentReg[ci];
+        }
+
+        var synced = 0;
+        for (var i = 0; i < ids.length; i++) {
+            var targetId = (ids[i] || "").trim();
+            if (!targetId) continue;
+            var item = _resolvePlayer(targetId, cMap);
+            if (item) {
+                _upsertRegistry(item);
+                cMap[targetId] = item;
+                synced++;
+            }
+        }
+
+        var updatedList = _readRegistry();
+        return { success: true, version: CLOUDSCRIPT_VERSION, syncedCount: synced, users: updatedList, total: updatedList.length };
     }
 
     // ====================================================================================

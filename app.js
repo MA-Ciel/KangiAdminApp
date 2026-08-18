@@ -104,7 +104,16 @@
     banDurationModal:   $('banDurationModal'),
     closeBanModal:      $('closeBanModal'),
     cancelBanBtn:       $('cancelBanBtn'),
-    banUserName:        $('banUserName')
+    banUserName:        $('banUserName'),
+    /* Sync PlayFab Modal */
+    syncPlayFabBtn:     $('syncPlayFabBtn'),
+    syncPlayFabModal:   $('syncPlayFabModal'),
+    closeSyncModal:     $('closeSyncModal'),
+    cancelSyncBtn:      $('cancelSyncBtn'),
+    confirmSyncBtn:     $('confirmSyncBtn'),
+    syncSegmentInput:   $('syncSegmentInput'),
+    syncIdsInput:       $('syncIdsInput'),
+    syncAlert:          $('syncAlert')
   };
 
   /* ─── App state ─── */
@@ -150,6 +159,7 @@
     _bindSettings();
     _bindUserManagement();
     _bindUserSearch();
+    _bindSyncPlayFab();
     _bindUserModals();
     _bindMessages();
   }
@@ -443,8 +453,8 @@
     }
 
     el.dashUsersList.innerHTML = '';
-    // Display up to 6 registered users on the dashboard
-    users.slice(0, 6).forEach(user => {
+    // Display all registered players on the dashboard
+    users.forEach(user => {
       const card = _createUserCardElement(user);
       el.dashUsersList.appendChild(card);
     });
@@ -1163,9 +1173,26 @@
   async function _fetchAndEnrichUsers() {
     try {
       const res = await KangiService.getAllUsers();
+      console.log('[Kangi] getAllUsers response from PlayFab:', res);
+
       const users = (res && Array.isArray(res.users)) ? res.users : [];
       state.allUsers = users;
       state.filteredUsers = users;
+      state.cloudscriptVersion = res?.version || 'Legacy (Revision not deployed)';
+      state.dataSource = res?.source || 'registry';
+
+      // Update Settings indicators
+      const csVerEl = $('settingsCloudscriptVersion');
+      const dsEl    = $('settingsDataSource');
+      if (csVerEl) {
+        csVerEl.textContent = state.cloudscriptVersion;
+        csVerEl.className = res?.version ? 'badge badge-success' : 'badge badge-red';
+      }
+      if (dsEl) {
+        dsEl.textContent = state.dataSource === 'playfab_segment' 
+          ? `PlayFab Segment (${users.length} players)` 
+          : `Title Registry (${users.length} players)`;
+      }
 
       /* Fetch character data for each user concurrently */
       await Promise.allSettled(
@@ -1213,25 +1240,44 @@
     }
   }
 
+  function _getUserDisplayName(user) {
+    if (!user) return 'Unknown';
+    let name = (user.displayName || '').trim();
+    // If displayName is raw hex PlayFabId, 'Unknown', or empty:
+    if (!name || name.toLowerCase() === 'unknown' || name === user.playFabId) {
+      if (user.username) {
+        name = user.username;
+      } else if (user.email) {
+        name = user.email.split('@')[0];
+      } else if (user.playFabId) {
+        name = 'Player ' + user.playFabId.slice(-4);
+      } else {
+        name = 'Player';
+      }
+    }
+    return name;
+  }
+
   function _createUserCardElement(user) {
     const card = document.createElement('div');
     card.className = 'user-card';
     card.dataset.playfabid = user.playFabId;
     card.dataset.user = JSON.stringify(user);
 
-    const initial        = (user.displayName || '?').charAt(0).toUpperCase();
+    const friendlyName   = _getUserDisplayName(user);
+    const initial        = friendlyName.charAt(0).toUpperCase();
     const characterCount = (user.unlockedCharacters || []).length;
 
     card.innerHTML = `
       <div class="user-card-left">
         ${user.avatarUrl
-          ? `<img class="user-card-avatar" src="${_esc(user.avatarUrl)}" alt="${_esc(user.displayName)}" />`
+          ? `<img class="user-card-avatar" src="${_esc(user.avatarUrl)}" alt="${_esc(friendlyName)}" />`
           : `<div class="user-card-avatar user-card-avatar--letter">${_esc(initial)}</div>`
         }
       </div>
       <div class="user-card-info">
         <div class="user-card-name">
-          ${_esc(user.displayName || 'Unknown')}
+          ${_esc(friendlyName)}
           ${user.isAdmin  ? `<span class="chip chip--purple" style="font-size:0.65rem;">Admin</span>`  : ''}
           ${user.isBanned ? `<span class="chip chip--red"    style="font-size:0.65rem;">Banned</span>` : ''}
         </div>
@@ -1355,6 +1401,91 @@
         <span>Found <span class="search-stats-count">${filtered.length}</span> user${filtered.length !== 1 ? 's' : ''} matching "${_esc(query)}"</span>
       </div>
     `;
+  }
+
+  /* ===================================================================
+     SYNC PLAYFAB PLAYERS — Fetch & store real PlayFab profiles
+     =================================================================== */
+  function _bindSyncPlayFab() {
+    if (!el.syncPlayFabBtn || !el.syncPlayFabModal) return;
+
+    const _openSync = () => {
+      if (!el.syncPlayFabModal) return;
+      el.syncPlayFabModal.classList.remove('hidden');
+      if (el.syncAlert) el.syncAlert.classList.add('hidden');
+      if (el.syncSegmentInput && !el.syncSegmentInput.value) {
+        el.syncSegmentInput.value = '39DB56B86E752167';
+      }
+      if (el.syncIdsInput && !el.syncIdsInput.value) {
+        el.syncIdsInput.value = [
+          'C459BC7F6EE8DD48',
+          'EFC3868BCE148234',
+          '7BC9615A4B771F2A',
+          '86A4785CB2B0B8C0',
+          '65993814E5A60679',
+          'E4BD1A54A9B48623'
+        ].join('\n');
+      }
+    };
+
+    const _closeSync = () => {
+      if (!el.syncPlayFabModal) return;
+      el.syncPlayFabModal.classList.add('hidden');
+    };
+
+    el.syncPlayFabBtn?.addEventListener('click', _openSync);
+    el.closeSyncModal?.addEventListener('click', _closeSync);
+    el.cancelSyncBtn?.addEventListener('click', _closeSync);
+    el.syncPlayFabModal?.querySelector('.modal-overlay')?.addEventListener('click', _closeSync);
+
+    el.confirmSyncBtn?.addEventListener('click', async () => {
+      const segmentId = (el.syncSegmentInput?.value || '').trim();
+      const rawIds    = (el.syncIdsInput?.value || '').trim();
+      const ids       = rawIds ? rawIds.split(/[\s,]+/).map(s => s.trim()).filter(Boolean) : [];
+
+      if (!segmentId && ids.length === 0) {
+        _alert(el.syncAlert, 'error', 'Please provide a Segment ID or paste at least one PlayFab Player ID.');
+        return;
+      }
+
+      const btnText = el.confirmSyncBtn.querySelector('.btn-text');
+      const loader  = el.confirmSyncBtn.querySelector('.btn-loader');
+      if (btnText) btnText.textContent = 'Syncing...';
+      if (loader) loader.classList.remove('hidden');
+      el.confirmSyncBtn.disabled = true;
+
+      try {
+        let res;
+        if (ids.length > 0) {
+          res = await KangiService.syncPlayersByIds(ids);
+        } else {
+          res = await KangiService.getAllUsers(segmentId);
+        }
+
+        if (res && res.success) {
+          _alert(el.syncAlert, 'success', `✓ Successfully synced ${res.syncedCount || res.total || 'all'} players from PlayFab!`);
+          await _loadAllData();
+          setTimeout(() => {
+            _closeSync();
+            if (btnText) btnText.textContent = 'Start Sync';
+            if (loader) loader.classList.add('hidden');
+            el.confirmSyncBtn.disabled = false;
+          }, 1200);
+        } else {
+          _alert(el.syncAlert, 'error', (res && res.error) || 'Failed to sync players.');
+          if (btnText) btnText.textContent = 'Start Sync';
+          if (loader) loader.classList.add('hidden');
+          el.confirmSyncBtn.disabled = false;
+        }
+      } catch (err) {
+        const msg = typeof err === 'string' ? err : (err?.message || err?.error || JSON.stringify(err) || 'Sync failed.');
+        _alert(el.syncAlert, 'error', msg);
+        console.error('[Kangi] Sync error:', err);
+        if (btnText) btnText.textContent = 'Start Sync';
+        if (loader) loader.classList.add('hidden');
+        el.confirmSyncBtn.disabled = false;
+      }
+    });
   }
 
   /* ===================================================================
@@ -1531,23 +1662,24 @@
     if (el.userModalActionsBar) el.userModalActionsBar.style.display = 'none';
     if (el.modalActionAlert)    el.modalActionAlert.classList.add('hidden');
 
-    const initial       = (user.displayName || '?').charAt(0).toUpperCase();
+    const friendlyName  = _getUserDisplayName(user);
+    const initial       = friendlyName.charAt(0).toUpperCase();
     // Resolve lazily here — NFTs are guaranteed loaded by the time panel opens
     const rawIds        = user.unlockedCharacters || [];
     const unlockedNames = rawIds.length > 0 ? _resolveCharacterNames(rawIds) : [];
     const allCharacters = ['Katsumi', 'Kiko', 'Bee', 'Chyna'];
 
-    console.log('[Kangi] Panel open for:', user.displayName, '| rawIds:', rawIds, '| resolved:', unlockedNames);
+    console.log('[Kangi] Panel open for:', friendlyName, '| rawIds:', rawIds, '| resolved:', unlockedNames);
 
     setTimeout(() => {
       el.userDetailsBody.innerHTML = `
         <!-- Hero -->
         <div class="up-hero">
           <div class="up-hero-avatar">
-            ${user.avatarUrl ? `<img src="${_esc(user.avatarUrl)}" alt="${_esc(user.displayName)}" />` : initial}
+            ${user.avatarUrl ? `<img src="${_esc(user.avatarUrl)}" alt="${_esc(friendlyName)}" />` : initial}
           </div>
           <div class="up-hero-info">
-            <h3>${_esc(user.displayName || 'Unknown')}</h3>
+            <h3>${_esc(friendlyName)}</h3>
             <span class="up-hero-email">${_esc(user.email || 'No email')}</span>
             <div class="up-hero-badges">
               ${user.isAdmin  ? '<span class="chip chip--purple">Admin</span>'  : ''}
@@ -1561,16 +1693,16 @@
           <div class="up-section-title">Account Information</div>
           <div class="up-info-grid">
             <div class="up-info-item">
-              <span class="up-info-label">PlayFab ID</span>
-              <span class="up-info-value">${_esc(user.playFabId)}</span>
-            </div>
-            <div class="up-info-item">
-              <span class="up-info-label">Display Name</span>
-              <span class="up-info-value">${_esc(user.displayName || '—')}</span>
+              <span class="up-info-label">Player Name</span>
+              <span class="up-info-value">${_esc(friendlyName)}</span>
             </div>
             <div class="up-info-item">
               <span class="up-info-label">Email</span>
               <span class="up-info-value">${_esc(user.email || '—')}</span>
+            </div>
+            <div class="up-info-item">
+              <span class="up-info-label">PlayFab ID</span>
+              <span class="up-info-value">${_esc(user.playFabId)}</span>
             </div>
             <div class="up-info-item">
               <span class="up-info-label">Account Status</span>

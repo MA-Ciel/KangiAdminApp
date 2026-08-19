@@ -535,7 +535,16 @@ const KangiService = (function () {
       if (saved) {
         const parsed = JSON.parse(saved);
         if (parsed.projectId || parsed.apiKey) {
-          return { ...DEFAULT_FIREBASE_CONFIG, ...parsed };
+          // Only let saved keys with a real value win. A config saved from the
+          // Settings form before the admin credentials were hardcoded stores
+          // them as "", which would otherwise clobber the defaults below.
+          const overrides = {};
+          Object.keys(parsed).forEach(k => {
+            if (parsed[k] !== '' && parsed[k] !== null && parsed[k] !== undefined) {
+              overrides[k] = parsed[k];
+            }
+          });
+          return { ...DEFAULT_FIREBASE_CONFIG, ...overrides };
         }
       }
     } catch (e) {
@@ -612,6 +621,10 @@ const KangiService = (function () {
     if (typeof firebase === 'undefined' || !firebase.auth) {
       throw new Error('Firebase Auth SDK is not loaded.');
     }
+
+    // The app must exist before firebase.auth() is usable — callers reaching
+    // here directly (e.g. the post-login card check) may be the first to touch it.
+    initFirebase(cfg);
 
     const current = firebase.auth().currentUser;
     if (current) return current;

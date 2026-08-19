@@ -216,7 +216,7 @@ const KangiService = (function () {
   /* Revoke admin role — accepts email or playFabId */
   function revokeAdmin(email, playFabId) { return _callAdminScript('revokeAdmin', { email: email || '', playFabId: playFabId || '' }); }
 
-  /* Register current user into the shared registry (call on every login) */
+  /* Register current user — no-op acknowledgment, kept for compatibility */
   function registerUser() {
     return _callAdminScript('registerUser', {
       email:       session.email       || '',
@@ -225,12 +225,22 @@ const KangiService = (function () {
     });
   }
 
-  /* Fetch all registered users from registry / segment */
-  function getAllUsers(segmentId) { return _callAdminScript('getAllUsers', { segmentId: segmentId || '' }); }
+  /* Step 1: Start a PlayFab export for all players in the given segment.
+     Returns { exportId, status:'pending' } or { success:false, error } */
+  function getAllUsers(segmentId) {
+    return _callAdminScript('getAllUsers', {
+      segmentId: segmentId || ''
+    });
+  }
 
-  /* Batch sync players by PlayFab IDs directly into the registry */
-  function syncPlayersByIds(playFabIds) { 
-    return _callAdminScript('syncPlayersByIds', { playFabIds: playFabIds || [] }); 
+  /* Step 2: Poll/download the export started by getAllUsers.
+     Returns { status:'pending' } while processing, or
+             { status:'complete', users:[...] } when done. */
+  function getExportResult(exportId, segmentId) {
+    return _callAdminScript('getExportResult', {
+      exportId:  exportId  || '',
+      segmentId: segmentId || ''
+    });
   }
 
   /* Ban a user — accepts email, playFabId, and optional duration in days (0 = permanent) */
@@ -496,6 +506,7 @@ const KangiService = (function () {
     revokeAdmin,
     registerUser,
     getAllUsers,
+    getExportResult,
     banUser,
     unbanUser,
     getUserCharacters,

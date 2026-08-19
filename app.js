@@ -104,16 +104,7 @@
     banDurationModal:   $('banDurationModal'),
     closeBanModal:      $('closeBanModal'),
     cancelBanBtn:       $('cancelBanBtn'),
-    banUserName:        $('banUserName'),
-    /* Sync PlayFab Modal */
-    syncPlayFabBtn:     $('syncPlayFabBtn'),
-    syncPlayFabModal:   $('syncPlayFabModal'),
-    closeSyncModal:     $('closeSyncModal'),
-    cancelSyncBtn:      $('cancelSyncBtn'),
-    confirmSyncBtn:     $('confirmSyncBtn'),
-    syncSegmentInput:   $('syncSegmentInput'),
-    syncIdsInput:       $('syncIdsInput'),
-    syncAlert:          $('syncAlert')
+    banUserName:        $('banUserName')
   };
 
   /* ─── App state ─── */
@@ -159,7 +150,6 @@
     _bindSettings();
     _bindUserManagement();
     _bindUserSearch();
-    _bindSyncPlayFab();
     _bindUserModals();
     _bindMessages();
   }
@@ -216,9 +206,6 @@
     _switchView('dashboard');
     _loadAllData();
     _checkHashRedeem();
-
-    /* Register this admin in the shared user registry (fire-and-forget) */
-    KangiService.registerUser().catch(() => {});
   }
 
   /* ================================================================
@@ -1170,49 +1157,105 @@
   /* ================================================================
      USER LIST — Fetch, Enrich & Render all players from PlayFab
      ================================================================ */
+  /* ================================================================
+     USER LIST — Fetch all players directly from PlayFab via export
+     Two-step flow:
+       1. getAllUsers  → starts export, returns { exportId }
+       2. getExportResult (polled) → returns { status, users } when complete
+     ================================================================ */
   async function _fetchAndEnrichUsers() {
+    // --- Step 1: Start the export ---
+    let startRes;
     try {
-      const res = await KangiService.getAllUsers();
-      console.log('[Kangi] getAllUsers response from PlayFab:', res);
-
-      const users = (res && Array.isArray(res.users)) ? res.users : [];
-      state.allUsers = users;
-      state.filteredUsers = users;
-      state.cloudscriptVersion = res?.version || 'Legacy (Revision not deployed)';
-      state.dataSource = res?.source || 'registry';
-
-      // Update Settings indicators
-      const csVerEl = $('settingsCloudscriptVersion');
-      const dsEl    = $('settingsDataSource');
-      if (csVerEl) {
-        csVerEl.textContent = state.cloudscriptVersion;
-        csVerEl.className = res?.version ? 'badge badge-success' : 'badge badge-red';
-      }
-      if (dsEl) {
-        dsEl.textContent = state.dataSource === 'playfab_segment' 
-          ? `PlayFab Segment (${users.length} players)` 
-          : `Title Registry (${users.length} players)`;
-      }
-
-      /* Fetch character data for each user concurrently */
-      await Promise.allSettled(
-        users.map(async (user) => {
-          try {
-            const ud = await KangiService.getUserCharacters(user.playFabId);
-            user.unlockedCharacters     = ud.unlockedCharacters || [];
-            user.unlockedCharacterNames = null; // resolved lazily when panel opens
-          } catch (_) {
-            user.unlockedCharacters     = [];
-            user.unlockedCharacterNames = null;
-          }
-        })
-      );
-
-      return users;
+      startRes = await KangiService.getAllUsers();
+      console.log('[DWM] getAllUsers (start export) response:', startRes);
     } catch (err) {
-      console.error('[Kangi] Failed to load users from PlayFab:', err);
-      return [];
+      const msg = typeof err === 'string' ? err : (err?.message || 'Failed to start player export.');
+      console.error('[DWM] getAllUsers error:', err);
+      throw new Error(msg);
     }
+
+    if (!startRes || !startRes.success) {
+      throw new Error((startRes && startRes.error) ||
+        'ExportPlayersInSegment failed — check PlayFabSecretKey in Title Internal Data.');
+    }
+
+    const exportId  = startRes.exportId;
+    const segmentId = startRes.segmentId || '';
+
+    if (!exportId) {
+      throw new Error('No exportId returned from server. Cannot retrieve player list.');
+    }
+
+    // --- Step 2: Poll until complete (max 30 attempts × 2s = up to 60s) ---
+    const MAX_POLLS        = 30;
+    const POLL_INTERVAL_MS = 2000;
+
+    for (let attempt = 1; attempt <= MAX_POLLS; attempt++) {
+      await new Promise(resolve => setTimeout(resolve, POLL_INTERVAL_MS));
+
+      // Update loading message so the admin knows progress
+      const loadMsg = document.getElementById('_usersLoadMsg');
+      if (loadMsg) loadMsg.textContent = `Fetching player profiles… (${attempt}/${MAX_POLLS})`;
+
+      let pollRes;
+      try {
+        pollRes = await KangiService.getExportResult(exportId, segmentId);
+        console.log(`[DWM] getExportResult attempt ${attempt}: status=${pollRes?.status} users=${pollRes?.users?.length ?? '—'}`);
+      } catch (err) {
+        const msg = typeof err === 'string' ? err : (err?.message || 'getExportResult failed.');
+        console.error('[DWM] getExportResult error:', err);
+        throw new Error(msg);
+      }
+
+      if (!pollRes || !pollRes.success) {
+        throw new Error((pollRes && pollRes.error) || 'getExportResult returned an error.');
+      }
+
+      if (pollRes.status === 'pending') {
+        continue; // still processing — wait and retry
+      }
+
+      if (pollRes.status === 'complete') {
+        const users = Array.isArray(pollRes.users) ? pollRes.users : [];
+        state.allUsers      = users;
+        state.filteredUsers = users;
+
+        // Update Settings indicators
+        const csVerEl = $('settingsCloudscriptVersion');
+        const dsEl    = $('settingsDataSource');
+        if (csVerEl) {
+          csVerEl.textContent = pollRes.version || 'v4.0.0-export';
+          csVerEl.className   = 'badge badge-success';
+        }
+        if (dsEl) {
+          dsEl.textContent = `PlayFab Export — ${users.length} player${users.length !== 1 ? 's' : ''}`;
+        }
+
+        // Enrich with unlocked characters concurrently
+        await Promise.allSettled(
+          users.map(async (user) => {
+            try {
+              const ud = await KangiService.getUserCharacters(user.playFabId);
+              user.unlockedCharacters     = ud.unlockedCharacters || [];
+              user.unlockedCharacterNames = null; // resolved lazily in panel
+            } catch (_) {
+              user.unlockedCharacters     = [];
+              user.unlockedCharacterNames = null;
+            }
+          })
+        );
+
+        return users;
+      }
+
+      throw new Error(`Unexpected export status "${pollRes.status}" from server.`);
+    }
+
+    throw new Error(
+      `Player export timed out after ${MAX_POLLS} attempts (${MAX_POLLS * POLL_INTERVAL_MS / 1000}s). ` +
+      'The segment may be large or the export service is slow. Please try again.'
+    );
   }
 
   async function _loadUsers() {
@@ -1221,7 +1264,7 @@
     el.usersList.innerHTML = `
       <div class="empty-state">
         <div class="btn-loader" style="width:22px;height:22px;border-width:3px;"></div>
-        <p>Loading players from PlayFab…</p>
+        <p id="_usersLoadMsg">Starting player export from PlayFab…</p>
       </div>`;
 
     try {
@@ -1401,91 +1444,6 @@
         <span>Found <span class="search-stats-count">${filtered.length}</span> user${filtered.length !== 1 ? 's' : ''} matching "${_esc(query)}"</span>
       </div>
     `;
-  }
-
-  /* ===================================================================
-     SYNC PLAYFAB PLAYERS — Fetch & store real PlayFab profiles
-     =================================================================== */
-  function _bindSyncPlayFab() {
-    if (!el.syncPlayFabBtn || !el.syncPlayFabModal) return;
-
-    const _openSync = () => {
-      if (!el.syncPlayFabModal) return;
-      el.syncPlayFabModal.classList.remove('hidden');
-      if (el.syncAlert) el.syncAlert.classList.add('hidden');
-      if (el.syncSegmentInput && !el.syncSegmentInput.value) {
-        el.syncSegmentInput.value = '39DB56B86E752167';
-      }
-      if (el.syncIdsInput && !el.syncIdsInput.value) {
-        el.syncIdsInput.value = [
-          'C459BC7F6EE8DD48',
-          'EFC3868BCE148234',
-          '7BC9615A4B771F2A',
-          '86A4785CB2B0B8C0',
-          '65993814E5A60679',
-          'E4BD1A54A9B48623'
-        ].join('\n');
-      }
-    };
-
-    const _closeSync = () => {
-      if (!el.syncPlayFabModal) return;
-      el.syncPlayFabModal.classList.add('hidden');
-    };
-
-    el.syncPlayFabBtn?.addEventListener('click', _openSync);
-    el.closeSyncModal?.addEventListener('click', _closeSync);
-    el.cancelSyncBtn?.addEventListener('click', _closeSync);
-    el.syncPlayFabModal?.querySelector('.modal-overlay')?.addEventListener('click', _closeSync);
-
-    el.confirmSyncBtn?.addEventListener('click', async () => {
-      const segmentId = (el.syncSegmentInput?.value || '').trim();
-      const rawIds    = (el.syncIdsInput?.value || '').trim();
-      const ids       = rawIds ? rawIds.split(/[\s,]+/).map(s => s.trim()).filter(Boolean) : [];
-
-      if (!segmentId && ids.length === 0) {
-        _alert(el.syncAlert, 'error', 'Please provide a Segment ID or paste at least one PlayFab Player ID.');
-        return;
-      }
-
-      const btnText = el.confirmSyncBtn.querySelector('.btn-text');
-      const loader  = el.confirmSyncBtn.querySelector('.btn-loader');
-      if (btnText) btnText.textContent = 'Syncing...';
-      if (loader) loader.classList.remove('hidden');
-      el.confirmSyncBtn.disabled = true;
-
-      try {
-        let res;
-        if (ids.length > 0) {
-          res = await KangiService.syncPlayersByIds(ids);
-        } else {
-          res = await KangiService.getAllUsers(segmentId);
-        }
-
-        if (res && res.success) {
-          _alert(el.syncAlert, 'success', `✓ Successfully synced ${res.syncedCount || res.total || 'all'} players from PlayFab!`);
-          await _loadAllData();
-          setTimeout(() => {
-            _closeSync();
-            if (btnText) btnText.textContent = 'Start Sync';
-            if (loader) loader.classList.add('hidden');
-            el.confirmSyncBtn.disabled = false;
-          }, 1200);
-        } else {
-          _alert(el.syncAlert, 'error', (res && res.error) || 'Failed to sync players.');
-          if (btnText) btnText.textContent = 'Start Sync';
-          if (loader) loader.classList.add('hidden');
-          el.confirmSyncBtn.disabled = false;
-        }
-      } catch (err) {
-        const msg = typeof err === 'string' ? err : (err?.message || err?.error || JSON.stringify(err) || 'Sync failed.');
-        _alert(el.syncAlert, 'error', msg);
-        console.error('[Kangi] Sync error:', err);
-        if (btnText) btnText.textContent = 'Start Sync';
-        if (loader) loader.classList.add('hidden');
-        el.confirmSyncBtn.disabled = false;
-      }
-    });
   }
 
   /* ===================================================================

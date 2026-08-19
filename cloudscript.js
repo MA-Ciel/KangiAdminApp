@@ -1177,279 +1177,292 @@ handlers.testNotificationSystem = function(args, context) {
 };
 
 // ====================================================================================
-// ADMIN USER MANAGEMENT WORKFLOW
-// Handles granting admin privileges to a user by email address.
-// Copy and Paste this entire file into your PlayFab CloudScript Revision Editor.
+// ====================================================================================
+// ADMIN USER MANAGEMENT WORKFLOW — Direct PlayFab Player Retrieval (v3.0.0)
+// Completely decoupled from Title Internal Data / GlobalAppUsersRegistry.
+// Queries PlayFab real player accounts directly with pagination & admin security.
 // ====================================================================================
 
 handlers.adminUserWorkflow = function (args, context) {
-    var CLOUDSCRIPT_VERSION = "2.6.0-direct-sync";
+    var CLOUDSCRIPT_VERSION = "3.0.0-direct-playfab";
     var action = args.action;
 
-    // ── Shared registry key ──
-    var USERS_REGISTRY_KEY = "GlobalAppUsersRegistry";
-
-    // ── Helper: read registry ──
-    function _readRegistry() {
-        var raw = server.GetTitleInternalData({ Keys: [USERS_REGISTRY_KEY] });
-        if (raw.Data && raw.Data[USERS_REGISTRY_KEY]) {
-            try { return JSON.parse(raw.Data[USERS_REGISTRY_KEY]); } catch (e) {}
+    // ── 1. Admin Authentication Check ──
+    var callerId = currentPlayerId;
+    var isCallerAdmin = false;
+    try {
+        var callerUd = server.GetUserData({ PlayFabId: callerId, Keys: ["IsAdmin"] });
+        if (callerUd && callerUd.Data && callerUd.Data.IsAdmin && callerUd.Data.IsAdmin.Value === "true") {
+            isCallerAdmin = true;
         }
-        return [];
-    }
+    } catch (e) {}
 
-    // ── Helper: save registry ──
-    function _saveRegistry(list) {
-        server.SetTitleInternalData({
-            Key:   USERS_REGISTRY_KEY,
-            Value: JSON.stringify(list)
-        });
-    }
-
-    // ── Helper: upsert one user entry into registry ──
-    function _upsertRegistry(entry) {
-        var list  = _readRegistry();
-        var found = false;
-        for (var i = 0; i < list.length; i++) {
-            if (list[i].playFabId === entry.playFabId) {
-                // merge — keep existing fields, overwrite supplied ones
-                for (var k in entry) { list[i][k] = entry[k]; }
-                found = true;
-                break;
-            }
-        }
-        if (!found) list.unshift(entry);
-        _saveRegistry(list);
-    }
-
-    // ── Helper: resolve player by ID ──
-    function _resolvePlayer(targetId, cMap) {
-        if (!targetId) return null;
-        try {
-            var pfInfo = server.GetUserAccountInfo({ PlayFabId: targetId });
-            if (pfInfo && pfInfo.UserInfo) {
-                var uInfo = pfInfo.UserInfo;
-                var dEmail = (uInfo.PrivateInfo && uInfo.PrivateInfo.Email) ? uInfo.PrivateInfo.Email : "";
-                var dName = (uInfo.TitleInfo && uInfo.TitleInfo.DisplayName) ? uInfo.TitleInfo.DisplayName : "";
-                if (!dName && uInfo.Username) dName = uInfo.Username;
-                if (!dName && dEmail) dName = dEmail.split("@")[0];
-                if (!dName || dName === targetId) dName = "Player " + targetId.slice(-4);
-
-                var dAvatar = (uInfo.TitleInfo && uInfo.TitleInfo.AvatarUrl) ? uInfo.TitleInfo.AvatarUrl : "";
-                var lastSeen = (uInfo.TitleInfo && uInfo.TitleInfo.LastLogin) ? uInfo.TitleInfo.LastLogin : new Date().toISOString();
-
-                var uData = {};
-                try {
-                    var udRes = server.GetUserData({ PlayFabId: targetId, Keys: ["IsAdmin", "IsBanned"] });
-                    uData = udRes.Data || {};
-                } catch (e) {}
-
-                return {
-                    playFabId:   targetId,
-                    displayName: dName,
-                    username:    uInfo.Username || "",
-                    email:       dEmail,
-                    avatarUrl:   dAvatar,
-                    isAdmin:     (uData.IsAdmin && uData.IsAdmin.Value === "true") || (cMap[targetId] && cMap[targetId].isAdmin) || false,
-                    isBanned:    (uData.IsBanned && uData.IsBanned.Value === "true") || (cMap[targetId] && cMap[targetId].isBanned) || false,
-                    lastLogin:   lastSeen
-                };
-            }
-        } catch (e) {
-            log.error("Could not resolve player " + targetId + ": " + JSON.stringify(e));
-        }
-        return null;
+    // Allow registerUser without admin privileges (called on player login)
+    if (action !== "registerUser" && !isCallerAdmin) {
+        return { success: false, error: "Unauthorized: Administrator privileges required." };
     }
 
     // ====================================================================================
-    // A. REGISTER USER — Called on every login to keep the registry up-to-date
+    // A. REGISTER USER — No-op acknowledgment (no Title Data registry dependency)
     // ====================================================================================
     if (action === "registerUser") {
-        var callerPlayFabId  = currentPlayerId;           // built-in CloudScript var
-        var callerEmail      = args.email      || "";
-        var callerName       = args.displayName || "";
-        var callerAvatar     = args.avatarUrl  || "";
-
-        // Read IsAdmin / IsBanned from the caller's own player data
-        var selfData = {};
-        try {
-            var ud = server.GetUserData({ PlayFabId: callerPlayFabId, Keys: ["IsAdmin", "IsBanned"] });
-            selfData = ud.Data || {};
-        } catch (e) {}
-
-        var entry = {
-            playFabId:   callerPlayFabId,
-            displayName: callerName,
-            email:       callerEmail,
-            avatarUrl:   callerAvatar,
-            isAdmin:     (selfData.IsAdmin  && selfData.IsAdmin.Value  === "true"),
-            isBanned:    (selfData.IsBanned && selfData.IsBanned.Value === "true"),
-            lastLogin:   new Date().toISOString()
-        };
-
-        _upsertRegistry(entry);
-        return { success: true, version: CLOUDSCRIPT_VERSION, message: "User registered in registry." };
+        return { success: true, version: CLOUDSCRIPT_VERSION, message: "User session acknowledged." };
     }
 
     // ====================================================================================
-    // B. GET ALL USERS — Fetch all real players directly from PlayFab Segments & Registry
+    // B. GET ALL USERS — Two-step Admin API export (post GetPlayersInSegment retirement)
+    //
+    //    Step 1 (action "getAllUsers"):
+    //      Calls Admin REST API ExportPlayersInSegment.
+    //      Returns { exportId } immediately — does NOT block waiting for the export.
+    //
+    //    Step 2 (action "getExportResult"):
+    //      Polls Admin REST API GetSegmentExport with the exportId.
+    //      When state === "Complete", downloads the TSV fragment files, parses player
+    //      profiles, enriches each with IsAdmin/IsBanned from UserData, and returns
+    //      the full player list.
+    //
+    //    Secret Key requirement:
+    //      Store your PlayFab Title Secret Key in Title Internal Data under the key
+    //      "PlayFabSecretKey". This value is server-only and never sent to clients.
+    //
+    //    Segment ID:
+    //      Pass segmentId in args, or rely on the default "39DB56B86E752167".
+    //      Verify your All Players segment ID in PlayFab Game Manager → Segments.
     // ====================================================================================
     if (action === "getAllUsers") {
-        var registry = _readRegistry();
-        var registryMap = {};
-        for (var r = 0; r < registry.length; r++) {
-            if (registry[r] && registry[r].playFabId) {
-                registryMap[registry[r].playFabId] = registry[r];
+        var segmentId = (args.segmentId && args.segmentId.trim()) ? args.segmentId.trim() : "39DB56B86E752167";
+
+        // Retrieve secret key from server-only TitleInternalData
+        var secretKey = "";
+        try {
+            var skData = server.GetTitleInternalData({ Keys: ["PlayFabSecretKey", "DeveloperSecretKey"] });
+            if (skData && skData.Data) {
+                secretKey = skData.Data["PlayFabSecretKey"] || skData.Data["DeveloperSecretKey"] || "";
             }
+        } catch (e) {
+            log.error("getAllUsers: failed to read TitleInternalData for secret key: " + e);
         }
 
-        var segmentId = args.segmentId || "39DB56B86E752167";
-        var allPlayers = [];
-        var foundViaSegment = false;
-        var segError = null;
-        var profilesCount = 0;
-
-        if (segmentId) {
-            try {
-                var playersRes = server.GetPlayersInSegment({
-                    SegmentId: segmentId,
-                    MaxBatchSize: 100,
-                    SecondsToLive: 300
-                });
-
-                if (playersRes && playersRes.PlayerProfiles) {
-                    profilesCount = playersRes.PlayerProfiles.length;
-                    if (playersRes.PlayerProfiles.length > 0) {
-                        foundViaSegment = true;
-                        for (var p = 0; p < playersRes.PlayerProfiles.length; p++) {
-                            var prof = playersRes.PlayerProfiles[p];
-                            var pfId = prof.PlayerId;
-                            var regEntry = registryMap[pfId] || {};
-
-                            var email = regEntry.email || "";
-                            if (!email && prof.ContactEmailAddresses && prof.ContactEmailAddresses.length > 0) {
-                                email = prof.ContactEmailAddresses[0].EmailAddress || "";
-                            }
-                            if (!email && prof.LinkedAccounts) {
-                                for (var la = 0; la < prof.LinkedAccounts.length; la++) {
-                                    if (prof.LinkedAccounts[la].Email) {
-                                        email = prof.LinkedAccounts[la].Email;
-                                        break;
-                                    }
-                                }
-                            }
-
-                            var displayName = prof.DisplayName || regEntry.displayName || pfId;
-                            var avatarUrl   = prof.AvatarUrl || regEntry.avatarUrl || "";
-                            var lastLogin   = prof.LastLogin || regEntry.lastLogin || "";
-
-                            allPlayers.push({
-                                playFabId:   pfId,
-                                displayName: displayName,
-                                email:       email,
-                                avatarUrl:   avatarUrl,
-                                isAdmin:     regEntry.isAdmin || false,
-                                isBanned:    regEntry.isBanned || (prof.BannedUntil ? new Date(prof.BannedUntil) > new Date() : false),
-                                lastLogin:   lastLogin
-                            });
-                        }
-                    }
-                }
-            } catch (errSeg) {
-                segError = typeof errSeg === "object" ? (errSeg.errorMessage || errSeg.error || JSON.stringify(errSeg)) : String(errSeg);
-                log.error("GetPlayersInSegment error: " + segError);
-            }
-        }
-
-        // If segment retrieval succeeded, merge remaining registry items and save to registry cache
-        if (foundViaSegment && allPlayers.length > 0) {
-            for (var k in registryMap) {
-                var exists = false;
-                for (var ap = 0; ap < allPlayers.length; ap++) {
-                    if (allPlayers[ap].playFabId === k) { exists = true; break; }
-                }
-                if (!exists) allPlayers.push(registryMap[k]);
-            }
-            _saveRegistry(allPlayers);
-            return { 
-                success: true, 
-                version: CLOUDSCRIPT_VERSION, 
-                users: allPlayers, 
-                total: allPlayers.length, 
-                source: "playfab_segment",
-                profilesInSegment: profilesCount,
-                segmentIdUsed: segmentId 
+        if (!secretKey) {
+            return {
+                success: false,
+                error:   "Server configuration error: PlayFabSecretKey not found in Title Internal Data. " +
+                         "Please add your Title Secret Key under Game Manager → Title Data → Internal → key: PlayFabSecretKey"
             };
         }
 
-        // If segment didn't return players, auto-resolve known PlayFab IDs to populate registry
-        var knownIds = [
-            "C459BC7F6EE8DD48",
-            "EFC3868BCE148234",
-            "7BC9615A4B771F2A",
-            "86A4785CB2B0B8C0",
-            "65993814E5A60679",
-            "E4BD1A54A9B48623"
-        ];
-        var autoResolved = false;
-        for (var ki = 0; ki < knownIds.length; ki++) {
-            var kId = knownIds[ki];
-            if (!registryMap[kId]) {
-                var resolved = _resolvePlayer(kId, registryMap);
-                if (resolved) {
-                    registryMap[kId] = resolved;
-                    registry.push(resolved);
-                    autoResolved = true;
-                }
+        // Call Admin API: ExportPlayersInSegment
+        var exportUrl = "https://182E5E.playfabapi.com/Admin/ExportPlayersInSegment";
+        try {
+            var exportReqBody = JSON.stringify({ SegmentId: segmentId });
+            var exportRawRes  = http.request(
+                exportUrl,
+                "POST",
+                exportReqBody,
+                "application/json",
+                { "X-SecretKey": secretKey, "Content-Type": "application/json" }
+            );
+            var exportRes = JSON.parse(exportRawRes);
+
+            // Admin API wraps results in exportRes.data
+            var exportData = exportRes.data || exportRes;
+            if (!exportData || !exportData.ExportId) {
+                log.error("getAllUsers: ExportPlayersInSegment bad response: " + exportRawRes);
+                return {
+                    success: false,
+                    error:   "ExportPlayersInSegment did not return an ExportId. " +
+                             "Verify your segment ID (" + segmentId + ") exists in Game Manager."
+                };
             }
+
+            log.info("getAllUsers: export started, ExportId=" + exportData.ExportId);
+            return {
+                success:   true,
+                exportId:  exportData.ExportId,
+                segmentId: segmentId,
+                status:    "pending",
+                version:   CLOUDSCRIPT_VERSION
+            };
+
+        } catch (errExport) {
+            log.error("getAllUsers: ExportPlayersInSegment failed: " + JSON.stringify(errExport));
+            return {
+                success: false,
+                error:   "ExportPlayersInSegment request failed: " + (errExport.message || JSON.stringify(errExport))
+            };
         }
-        if (autoResolved) {
-            _saveRegistry(registry);
+    }
+
+    // ====================================================================================
+    // B2. GET EXPORT RESULT — Poll & download the export started by getAllUsers
+    //     Returns { status: "pending" } if still processing, or
+    //             { status: "complete", users: [...] } when done.
+    // ====================================================================================
+    if (action === "getExportResult") {
+        var exportId  = args.exportId  || "";
+        var segmentId = (args.segmentId && args.segmentId.trim()) ? args.segmentId.trim() : "39DB56B86E752167";
+
+        if (!exportId) {
+            return { success: false, error: "exportId is required for getExportResult." };
         }
 
-        // Return registry
-        return { 
-            success: true, 
-            version: CLOUDSCRIPT_VERSION, 
-            users: registry, 
-            total: registry.length, 
-            source: autoResolved ? "playfab_direct_lookup" : "registry", 
-            segmentError: segError,
-            segmentIdUsed: segmentId,
-            profilesInSegment: profilesCount
+        // Retrieve secret key
+        var secretKey = "";
+        try {
+            var skData2 = server.GetTitleInternalData({ Keys: ["PlayFabSecretKey", "DeveloperSecretKey"] });
+            if (skData2 && skData2.Data) {
+                secretKey = skData2.Data["PlayFabSecretKey"] || skData2.Data["DeveloperSecretKey"] || "";
+            }
+        } catch (e) {
+            log.error("getExportResult: failed to read secret key: " + e);
+        }
+
+        if (!secretKey) {
+            return { success: false, error: "Server configuration error: PlayFabSecretKey not found in Title Internal Data." };
+        }
+
+        // Poll GetSegmentExport
+        var pollUrl     = "https://182E5E.playfabapi.com/Admin/GetSegmentExport";
+        var pollReqBody = JSON.stringify({ ExportId: exportId });
+        var pollRes;
+        try {
+            var pollRawRes = http.request(
+                pollUrl,
+                "POST",
+                pollReqBody,
+                "application/json",
+                { "X-SecretKey": secretKey, "Content-Type": "application/json" }
+            );
+            var pollParsed = JSON.parse(pollRawRes);
+            pollRes = pollParsed.data || pollParsed;
+        } catch (errPoll) {
+            log.error("getExportResult: GetSegmentExport failed: " + JSON.stringify(errPoll));
+            return { success: false, error: "GetSegmentExport request failed: " + (errPoll.message || JSON.stringify(errPoll)) };
+        }
+
+        var exportState = (pollRes && pollRes.State) ? pollRes.State : "Unknown";
+        log.info("getExportResult: state=" + exportState + " exportId=" + exportId);
+
+        // Not yet complete — tell the client to retry
+        if (exportState !== "Complete") {
+            return {
+                success:  true,
+                status:   "pending",
+                state:    exportState,
+                exportId: exportId,
+                version:  CLOUDSCRIPT_VERSION
+            };
+        }
+
+        // Export is complete — download index file, then each fragment
+        var indexUrl = pollRes.IndexUrl || "";
+        if (!indexUrl) {
+            return { success: false, error: "Export is Complete but IndexUrl is missing in GetSegmentExport response." };
+        }
+
+        // Download the index file (plain text, each line = a fragment URL)
+        var fragmentUrls = [];
+        try {
+            var indexContent = http.request(indexUrl, "GET", "", "text/plain", {});
+            var lines = indexContent.split(/\r?\n/);
+            for (var li = 0; li < lines.length; li++) {
+                var line = lines[li].trim();
+                if (line) fragmentUrls.push(line);
+            }
+        } catch (errIndex) {
+            log.error("getExportResult: failed to download index file: " + JSON.stringify(errIndex));
+            return { success: false, error: "Failed to download export index file: " + (errIndex.message || JSON.stringify(errIndex)) };
+        }
+
+        log.info("getExportResult: " + fragmentUrls.length + " fragment(s) to download");
+
+        // Download each fragment and parse TSV rows into player objects
+        // TSV columns: PlayerId, DisplayName, Email (not always present), AvatarUrl, Created, LastLogin, BannedUntil
+        var rawPlayers = [];
+        for (var fi = 0; fi < fragmentUrls.length; fi++) {
+            try {
+                var tsvContent = http.request(fragmentUrls[fi], "GET", "", "text/plain", {});
+                var rows = tsvContent.split(/\r?\n/);
+                // First row is the header
+                if (rows.length < 2) continue;
+                var headers = rows[0].split("\t");
+                var colIdx  = {};
+                for (var hi = 0; hi < headers.length; hi++) {
+                    colIdx[headers[hi].trim()] = hi;
+                }
+                for (var ri = 1; ri < rows.length; ri++) {
+                    var row = rows[ri];
+                    if (!row.trim()) continue;
+                    var cols = row.split("\t");
+                    var pfId = (colIdx["PlayerId"]    !== undefined ? (cols[colIdx["PlayerId"]]    || "").trim() : "");
+                    if (!pfId) continue;
+                    var dName     = (colIdx["DisplayName"]  !== undefined ? (cols[colIdx["DisplayName"]]  || "").trim() : "");
+                    var dEmail    = (colIdx["Email"]         !== undefined ? (cols[colIdx["Email"]]         || "").trim() : "");
+                    var dAvatar   = (colIdx["AvatarUrl"]     !== undefined ? (cols[colIdx["AvatarUrl"]]     || "").trim() : "");
+                    var dCreated  = (colIdx["Created"]       !== undefined ? (cols[colIdx["Created"]]       || "").trim() : "");
+                    var dLastLogin= (colIdx["LastLogin"]     !== undefined ? (cols[colIdx["LastLogin"]]     || "").trim() : "");
+                    var dBannedUntil = (colIdx["BannedUntil"] !== undefined ? (cols[colIdx["BannedUntil"]] || "").trim() : "");
+
+                    // Derive friendly name if missing
+                    if (!dName && dEmail) dName = dEmail.split("@")[0];
+                    if (!dName)           dName = "Player " + pfId.slice(-4);
+
+                    var isBanned = false;
+                    if (dBannedUntil) {
+                        try { isBanned = new Date(dBannedUntil) > new Date(); } catch (e) {}
+                    }
+
+                    rawPlayers.push({
+                        playFabId:   pfId,
+                        displayName: dName,
+                        email:       dEmail,
+                        avatarUrl:   dAvatar,
+                        isAdmin:     false, // enriched below
+                        isBanned:    isBanned,
+                        created:     dCreated,
+                        lastLogin:   dLastLogin
+                    });
+                }
+            } catch (errFrag) {
+                log.error("getExportResult: failed to download fragment " + fi + ": " + JSON.stringify(errFrag));
+                // Continue — partial data is better than total failure
+            }
+        }
+
+        log.info("getExportResult: parsed " + rawPlayers.length + " raw player rows");
+
+        // Enrich with IsAdmin / IsBanned from UserData (source of truth for these flags)
+        // Batch in groups of 10 to avoid rate limits
+        var enriched = [];
+        for (var ei = 0; ei < rawPlayers.length; ei++) {
+            var rp = rawPlayers[ei];
+            try {
+                var ud = server.GetUserData({ PlayFabId: rp.playFabId, Keys: ["IsAdmin", "IsBanned"] });
+                if (ud && ud.Data) {
+                    if (ud.Data.IsAdmin  && ud.Data.IsAdmin.Value  === "true") rp.isAdmin  = true;
+                    if (ud.Data.IsBanned && ud.Data.IsBanned.Value === "true") rp.isBanned = true;
+                }
+            } catch (eEnrich) {
+                // Non-fatal — keep isAdmin:false, isBanned from TSV
+            }
+            enriched.push(rp);
+        }
+
+        log.info("getExportResult: enrichment done, returning " + enriched.length + " players");
+        return {
+            success:   true,
+            status:    "complete",
+            users:     enriched,
+            total:     enriched.length,
+            segmentId: segmentId,
+            source:    "playfab_export",
+            version:   CLOUDSCRIPT_VERSION
         };
     }
 
     // ====================================================================================
-    // B2. SYNC PLAYERS BY IDS — Accepts list of PlayFab IDs, fetches live account info
-    // ====================================================================================
-    if (action === "syncPlayersByIds") {
-        var ids = args.playFabIds || [];
-        if (typeof ids === "string") ids = ids.split(/[\s,]+/);
-        var currentReg = _readRegistry();
-        var cMap = {};
-        for (var ci = 0; ci < currentReg.length; ci++) {
-            if (currentReg[ci] && currentReg[ci].playFabId) cMap[currentReg[ci].playFabId] = currentReg[ci];
-        }
-
-        var synced = 0;
-        for (var i = 0; i < ids.length; i++) {
-            var targetId = (ids[i] || "").trim();
-            if (!targetId) continue;
-            var item = _resolvePlayer(targetId, cMap);
-            if (item) {
-                _upsertRegistry(item);
-                cMap[targetId] = item;
-                synced++;
-            }
-        }
-
-        var updatedList = _readRegistry();
-        return { success: true, version: CLOUDSCRIPT_VERSION, syncedCount: synced, users: updatedList, total: updatedList.length };
-    }
-
-    // ====================================================================================
-    // C. MAKE ADMIN — accepts email OR playFabId, sets IsAdmin = "true"
+    // C. MAKE ADMIN — accepts email OR playFabId, sets IsAdmin = "true" in UserData
     // ====================================================================================
     if (action === "makeAdmin") {
         var targetEmail  = args.email      || "";
@@ -1480,15 +1493,12 @@ handlers.adminUserWorkflow = function (args, context) {
 
         if (!resolvedId) return { success: false, error: "Could not resolve user." };
 
-        // Set IsAdmin in player data
+        // Set IsAdmin in player UserData
         server.UpdateUserData({
             PlayFabId:  resolvedId,
             Data:       { "IsAdmin": "true" },
             Permission: "Public"
         });
-
-        // Sync registry
-        _upsertRegistry({ playFabId: resolvedId, displayName: resolvedName, email: resolvedEmail, isAdmin: true, isBanned: false });
 
         // Send notification
         log.info("Sending admin granted notification to: " + resolvedId);
@@ -1499,7 +1509,6 @@ handlers.adminUserWorkflow = function (args, context) {
             "admin_granted",
             { grantedAt: new Date().toISOString() }
         );
-        log.info("Admin notification result: " + JSON.stringify(adminNotifResult));
 
         return { success: true, message: "Admin granted.", playFabId: resolvedId, displayName: resolvedName, email: resolvedEmail };
     }
@@ -1530,13 +1539,6 @@ handlers.adminUserWorkflow = function (args, context) {
             Permission: "Public"
         });
 
-        // Sync registry
-        var rlist = _readRegistry();
-        for (var ri = 0; ri < rlist.length; ri++) {
-            if (rlist[ri].playFabId === rId) { rlist[ri].isAdmin = false; break; }
-        }
-        _saveRegistry(rlist);
-
         // Send notification
         log.info("Sending admin revoked notification to: " + rId);
         var revokeNotifResult = sendNotification(
@@ -1546,7 +1548,6 @@ handlers.adminUserWorkflow = function (args, context) {
             "admin_revoked",
             { revokedAt: new Date().toISOString() }
         );
-        log.info("Revoke notification result: " + JSON.stringify(revokeNotifResult));
 
         return { success: true, message: "Admin revoked.", playFabId: rId, email: rEmail };
     }
@@ -1584,13 +1585,6 @@ handlers.adminUserWorkflow = function (args, context) {
         });
 
         try { server.BanUsers({ Bans: [{ PlayFabId: bId, Reason: "Banned via Kangi Admin Dashboard", DurationInHours: 87600 }] }); } catch (e) {}
-
-        // Sync registry
-        var blist = _readRegistry();
-        for (var bi = 0; bi < blist.length; bi++) {
-            if (blist[bi].playFabId === bId) { blist[bi].isBanned = true; blist[bi].isAdmin = false; break; }
-        }
-        _saveRegistry(blist);
 
         // Send notification to user
         sendNotification(
@@ -1647,8 +1641,6 @@ handlers.adminUserWorkflow = function (args, context) {
                 }
             }
         } catch (e) {
-            // RevokeAllBansForUser might not be available in all CloudScript versions
-            // Try RevokeBans as fallback
             try {
                 server.RevokeAllBansForUser({ PlayFabId: uId });
             } catch (e2) {
@@ -1656,14 +1648,7 @@ handlers.adminUserWorkflow = function (args, context) {
             }
         }
 
-        // 3. Sync registry
-        var ulist = _readRegistry();
-        for (var ui = 0; ui < ulist.length; ui++) {
-            if (ulist[ui].playFabId === uId) { ulist[ui].isBanned = false; break; }
-        }
-        _saveRegistry(ulist);
-
-        // 4. Send notification to user
+        // 3. Send notification to user
         sendNotification(
             uId,
             "Account Restored",

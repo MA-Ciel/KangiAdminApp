@@ -278,6 +278,12 @@ const KangiService = (function () {
   /* Unban a user — accepts email or playFabId */
   function unbanUser(email, playFabId) { return _callAdminScript('unbanUser', { email: email || '', playFabId: playFabId || '' }); }
 
+  /* Premium — grants or revokes the ability to upload music. Sets IsPremium in
+     the player's PlayFab UserData, which the Unity client reads before showing
+     the upload screen. */
+  function makePremium(email, playFabId)   { return _callAdminScript('makePremium',   { email: email || '', playFabId: playFabId || '' }); }
+  function revokePremium(email, playFabId) { return _callAdminScript('revokePremium', { email: email || '', playFabId: playFabId || '' }); }
+
   /* ============================================================
      IMAGE UTIL — resize + compress before storing
      ============================================================ */
@@ -797,6 +803,8 @@ const KangiService = (function () {
     getExportResult,
     banUser,
     unbanUser,
+    makePremium,
+    revokePremium,
     getUserCharacters,
     sendNotification,
     getNotifications,

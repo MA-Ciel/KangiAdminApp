@@ -99,6 +99,9 @@
     modalUnbanBtn:      $('modalUnbanBtn'),
     modalNotifInput:    $('modalNotifInput'),
     modalSendNotifBtn:  $('modalSendNotifBtn'),
+    modalMakePremiumBtn:   $('modalMakePremiumBtn'),
+    modalRevokePremiumBtn: $('modalRevokePremiumBtn'),
+    banSectionLabel:    $('banSectionLabel'),
     modalActionAlert:   $('modalActionAlert'),
     /* Firebase Configuration */
     fbDatabaseType:     $('fbDatabaseType'),
@@ -1579,6 +1582,42 @@
       });
     });
 
+    /* ── Make Premium ── */
+    el.modalMakePremiumBtn?.addEventListener('click', async () => {
+      if (!state.selectedUser) return;
+      const { email, playFabId, displayName } = state.selectedUser;
+      if (!confirm(`Give "${displayName || email}" premium access to upload music?`)) return;
+      await _modalAction(async () => {
+        const res = await KangiService.makePremium(email, playFabId);
+        if (res && res.success) {
+          state.selectedUser.isPremium = true;
+          _modalAlert('success', `✓ ${displayName || email} can now upload music.`);
+          _updateModalButtons(state.selectedUser);
+          await _loadUsers();
+        } else {
+          _modalAlert('error', (res && res.error) || 'Failed to grant premium.');
+        }
+      });
+    });
+
+    /* ── Revoke Premium ── */
+    el.modalRevokePremiumBtn?.addEventListener('click', async () => {
+      if (!state.selectedUser) return;
+      const { email, playFabId, displayName } = state.selectedUser;
+      if (!confirm(`Remove premium music upload access from "${displayName || email}"?`)) return;
+      await _modalAction(async () => {
+        const res = await KangiService.revokePremium(email, playFabId);
+        if (res && res.success) {
+          state.selectedUser.isPremium = false;
+          _modalAlert('success', `✓ Premium removed from ${displayName || email}.`);
+          _updateModalButtons(state.selectedUser);
+          await _loadUsers();
+        } else {
+          _modalAlert('error', (res && res.error) || 'Failed to revoke premium.');
+        }
+      });
+    });
+
     /* ── Unban ── */
     el.modalUnbanBtn?.addEventListener('click', async () => {
       if (!state.selectedUser) return;
@@ -1679,13 +1718,21 @@
     el.modalMakeAdminBtn.style.display   = (!user.isAdmin && !user.isBanned && user.email) ? '' : 'none';
     el.modalRevokeAdminBtn.style.display = (user.isAdmin  && user.email) ? '' : 'none';
 
+    // Premium toggles — a banned user cannot be granted upload access
+    if (el.modalMakePremiumBtn) {
+      el.modalMakePremiumBtn.style.display   = (!user.isPremium && !user.isBanned && user.email) ? '' : 'none';
+    }
+    if (el.modalRevokePremiumBtn) {
+      el.modalRevokePremiumBtn.style.display = (user.isPremium && user.email) ? '' : 'none';
+    }
+
     // Ban / unban
     const canBan   = !user.isBanned && user.email;
     const canUnban = user.isBanned  && user.email;
 
     // Show/hide the whole ban grid
     const banGrid = el.userModalActionsBar.querySelector('.upf-ban-grid');
-    const banLabel = el.userModalActionsBar.querySelectorAll('.upf-section-label')[1];
+    const banLabel = el.banSectionLabel;
     if (banGrid)  banGrid.style.display  = canBan ? '' : 'none';
     if (banLabel) banLabel.style.display = canBan ? '' : 'none';
 

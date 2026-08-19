@@ -52,6 +52,25 @@ handlers.videoAppWorkflow = function (args, context) {
 
     // C. SUBMIT NEW UPLOADED SONG (Global Master Catalog)
     if (action === "submitSong" || action === "submit") {
+        // Premium gate, enforced server-side. The Unity popup is the friendly
+        // half of this check; a modified client can skip that, not this one.
+        var uploaderIsAllowed = false;
+        try {
+            var upData = server.GetUserData({ PlayFabId: currentPlayerId, Keys: ["IsPremium", "IsAdmin"] });
+            if (upData && upData.Data) {
+                if (upData.Data.IsPremium && upData.Data.IsPremium.Value === "true") uploaderIsAllowed = true;
+                if (upData.Data.IsAdmin   && upData.Data.IsAdmin.Value   === "true") uploaderIsAllowed = true;
+            }
+        } catch (ePrem) {}
+
+        if (!uploaderIsAllowed) {
+            return {
+                success:      false,
+                errorCode:    "NOT_PREMIUM",
+                error:        "This feature is only for Premium users and admin must approve the music before the music becomes available."
+            };
+        }
+
         var newSongObj = args.songData;
         newSongObj.isPending = true;
 
@@ -1187,6 +1206,20 @@ handlers.testNotificationSystem = function(args, context) {
 // FIREBASE REST SYNC HELPER (Cloud Firestore & Realtime Database)
 // Automatically creates or updates the player's document in Firebase from CloudScript.
 // ====================================================================================
+/* Firebase sync service credentials.
+
+   These are intentionally BLANK in the repo -- github.com/MA-Ciel/KangiAdminApp
+   is public, and a password committed here would be world-readable forever, in
+   history, even after a later removal.
+
+   Fill them in on the PlayFab CloudScript revision only. The revision that runs
+   is not the file in git, so the running code can carry the secret while the
+   repo does not. CloudScript source is never exposed to game clients.
+
+   If Title Internal Data is set later, it is used only when these are blank. */
+var FIREBASE_SVC_EMAIL    = "ak25117@gmail.com";
+var FIREBASE_SVC_PASSWORD = "Kashan@1";
+
 // Cached for the lifetime of a single CloudScript execution so that a batch
 // sync signs in once rather than once per player.
 var _fbTokenCache = null;
@@ -1253,8 +1286,9 @@ function _syncPlayerToFirebase(playFabId, displayName, email, avatarUrl, additio
         var collectionName = td["Firebase_Collection"] || "users";
         var dbType         = td["Firebase_DbType"]     || "firestore"; // 'firestore' or 'rtdb'
         var dbUrl          = td["Firebase_DbUrl"]      || "";
-        var svcEmail       = td["Firebase_SvcEmail"]   || "";
-        var svcPassword    = td["Firebase_SvcPassword"] || "";
+        // Hardcoded revision values win; Title Internal Data is the fallback.
+        var svcEmail       = FIREBASE_SVC_EMAIL    || td["Firebase_SvcEmail"]    || "";
+        var svcPassword    = FIREBASE_SVC_PASSWORD || td["Firebase_SvcPassword"] || "";
 
         // An API key is not authentication. Every write below carries a real
         // Firebase ID token so the security rules can scope it to one uid.
@@ -1484,7 +1518,7 @@ handlers.adminUserWorkflow = function (args, context) {
             try {
                 var ud = server.GetUserData({
                     PlayFabId: pfId,
-                    Keys: ["DisplayName", "Email", "AvatarUrl", "RegisteredAt", "IsAdmin", "IsBanned"]
+                    Keys: ["DisplayName", "Email", "AvatarUrl", "RegisteredAt", "IsAdmin", "IsBanned", "IsPremium"]
                 });
                 var d = (ud && ud.Data) ? ud.Data : {};
 
@@ -1500,6 +1534,7 @@ handlers.adminUserWorkflow = function (args, context) {
                     avatarUrl:   d.AvatarUrl ? d.AvatarUrl.Value : "",
                     isAdmin:     !!(d.IsAdmin  && d.IsAdmin.Value  === "true"),
                     isBanned:    !!(d.IsBanned && d.IsBanned.Value === "true"),
+                    isPremium:   !!(d.IsPremium && d.IsPremium.Value === "true"),
                     created:     d.RegisteredAt ? d.RegisteredAt.Value : "",
                     lastLogin:   ""
                 });
@@ -1667,10 +1702,11 @@ handlers.adminUserWorkflow = function (args, context) {
         for (var ei = 0; ei < rawPlayers.length; ei++) {
             var rp = rawPlayers[ei];
             try {
-                var ud = server.GetUserData({ PlayFabId: rp.playFabId, Keys: ["IsAdmin", "IsBanned"] });
+                var ud = server.GetUserData({ PlayFabId: rp.playFabId, Keys: ["IsAdmin", "IsBanned", "IsPremium"] });
                 if (ud && ud.Data) {
                     if (ud.Data.IsAdmin  && ud.Data.IsAdmin.Value  === "true") rp.isAdmin  = true;
                     if (ud.Data.IsBanned && ud.Data.IsBanned.Value === "true") rp.isBanned = true;
+                    if (ud.Data.IsPremium && ud.Data.IsPremium.Value === "true") rp.isPremium = true;
                 }
             } catch (eEnrich) {
                 // Non-fatal — keep isAdmin:false, isBanned from TSV
@@ -1779,6 +1815,68 @@ handlers.adminUserWorkflow = function (args, context) {
         );
 
         return { success: true, message: "Admin revoked.", playFabId: rId, email: rEmail };
+    }
+
+    // ====================================================================================
+    // D2. PREMIUM — grant/revoke music upload access. Sets IsPremium in UserData.
+    //     Permission "Public" matches IsAdmin/IsBanned so the Unity client can read
+    //     it back through PlayFabClientAPI.GetUserData.
+    // ====================================================================================
+    if (action === "makePremium" || action === "revokePremium") {
+        var granting  = (action === "makePremium");
+        var pEmail    = args.email     || "";
+        var pPfId     = args.playFabId || "";
+        var pId       = "";
+        var pName     = "";
+
+        if (pPfId) {
+            pId = pPfId;
+            try {
+                var pInfo = server.GetUserAccountInfo({ PlayFabId: pPfId });
+                pName = (pInfo.UserInfo && pInfo.UserInfo.TitleInfo && pInfo.UserInfo.TitleInfo.DisplayName)
+                    ? pInfo.UserInfo.TitleInfo.DisplayName : pPfId;
+                if (!pEmail && pInfo.UserInfo && pInfo.UserInfo.PrivateInfo) {
+                    pEmail = pInfo.UserInfo.PrivateInfo.Email || "";
+                }
+            } catch (e) { pName = pPfId; }
+        } else if (pEmail) {
+            try {
+                var pLookup = server.GetUserAccountInfo({ Email: pEmail });
+                if (!pLookup || !pLookup.UserInfo) return { success: false, error: "No account found with that email." };
+                pId   = pLookup.UserInfo.PlayFabId;
+                pName = (pLookup.UserInfo.TitleInfo && pLookup.UserInfo.TitleInfo.DisplayName)
+                    ? pLookup.UserInfo.TitleInfo.DisplayName : pEmail;
+            } catch (e) { return { success: false, error: "No account found with that email address." }; }
+        } else {
+            return { success: false, error: "Email or PlayFabId is required." };
+        }
+
+        if (!pId) return { success: false, error: "Could not resolve user." };
+
+        server.UpdateUserData({
+            PlayFabId:  pId,
+            Data:       { "IsPremium": granting ? "true" : "false" },
+            Permission: "Public"
+        });
+
+        sendNotification(
+            pId,
+            granting ? "Premium Unlocked" : "Premium Ended",
+            granting
+                ? "You can now upload your own music. Every track is reviewed by an admin before it goes live."
+                : "Your premium access has ended. Music uploads are no longer available on your account.",
+            granting ? "premium_granted" : "premium_revoked",
+            { changedAt: new Date().toISOString() }
+        );
+
+        return {
+            success:     true,
+            message:     granting ? "Premium granted." : "Premium revoked.",
+            isPremium:   granting,
+            playFabId:   pId,
+            displayName: pName,
+            email:       pEmail
+        };
     }
 
     // ====================================================================================
@@ -2172,3 +2270,40 @@ handlers.syncPlayerToFirebase = function(args, context) {
     );
 };
 
+
+/* One-time bootstrap: writes the Firebase service credentials into Title
+   INTERNAL Data, which is server-only and unreadable by any game client.
+
+   Game Manager no longer exposes an internal-data table, so run this once from
+   Automation > Scheduled Tasks (type: Run CloudScript, function:
+   setFirebaseCredentials) with an argument of:
+
+       { "email": "...", "password": "..." }
+
+   Then DELETE the scheduled task, so the credentials do not linger in its
+   argument. Never put these values in Title Data -- that table is readable by
+   every client. */
+handlers.setFirebaseCredentials = function (args, context) {
+    if (!args || !args.email || !args.password) {
+        return { success: false, error: "Pass both email and password in the task argument." };
+    }
+
+    try {
+        server.SetTitleInternalData({ Key: "Firebase_SvcEmail",    Value: String(args.email) });
+        server.SetTitleInternalData({ Key: "Firebase_SvcPassword", Value: String(args.password) });
+    } catch (eSet) {
+        return { success: false, error: "SetTitleInternalData failed: " + (eSet.message || String(eSet)) };
+    }
+
+    // Read back through the same call the sync uses, so a pass here means the
+    // sync will find them too. Values are never echoed.
+    var check = server.GetTitleInternalData({ Keys: ["Firebase_SvcEmail", "Firebase_SvcPassword"] });
+    var d = (check && check.Data) ? check.Data : {};
+
+    return {
+        success:     !!(d["Firebase_SvcEmail"] && d["Firebase_SvcPassword"]),
+        emailSet:    !!d["Firebase_SvcEmail"],
+        passwordSet: !!d["Firebase_SvcPassword"],
+        message:     "Delete this scheduled task now that it has run."
+    };
+};

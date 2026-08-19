@@ -199,15 +199,15 @@
 
       try {
         const res = await KangiService.login(email, password);
-        // Opportunistic: reuse this same email/password against Firebase Auth,
-        // so Settings never needs a separate admin login on a fresh browser.
-        // Silent no-op if it doesn't match — _onLoginSuccess proceeds either way.
-        await KangiService.tryAutoFirebaseAuth(email, password).catch(() => {});
         if (el.firebaseSettingsCard) {
-          // Same-credential sign-in landed — nothing to configure, hide the card.
-          // A mismatched admin never triggers this, so their card stays visible.
-          el.firebaseSettingsCard.style.display =
-            (typeof firebase !== 'undefined' && firebase.auth && firebase.auth().currentUser) ? 'none' : '';
+          // Firebase now signs in with its own built-in default credentials, so
+          // this card only needs to appear if that connection actually fails.
+          try {
+            await KangiService.ensureFirebaseAuth();
+            el.firebaseSettingsCard.style.display = 'none';
+          } catch (e) {
+            el.firebaseSettingsCard.style.display = '';
+          }
         }
         _onLoginSuccess(res);
       } catch (msg) {

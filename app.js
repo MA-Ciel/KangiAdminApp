@@ -1087,9 +1087,13 @@
               <div class="song-trim-range"></div>
               <div class="song-trim-playhead"></div>
               <div class="song-trim-handle" data-handle="start" tabindex="0" role="slider"
-                   aria-label="Trim start" aria-valuemin="0" aria-valuenow="${trimStart}"></div>
+                   aria-label="Trim start" aria-valuemin="0" aria-valuenow="${trimStart}">
+                <span class="song-trim-bubble" data-bubble="start">0:00</span>
+              </div>
               <div class="song-trim-handle" data-handle="end" tabindex="0" role="slider"
-                   aria-label="Trim end" aria-valuemin="0" aria-valuenow="${trimEnd}"></div>
+                   aria-label="Trim end" aria-valuemin="0" aria-valuenow="${trimEnd}">
+                <span class="song-trim-bubble" data-bubble="end">0:00</span>
+              </div>
             </div>
             <div class="song-trim-scale">
               <span>0:00</span>
@@ -1145,6 +1149,9 @@
     const startIn   = panel.querySelector('.song-trim-start');
     const endIn     = panel.querySelector('.song-trim-end');
     const lenEl     = panel.querySelector('.song-trim-len');
+    const bubStart  = bar.querySelector('[data-bubble="start"]');
+    const bubEnd    = bar.querySelector('[data-bubble="end"]');
+    const playhead  = bar.querySelector('.song-trim-playhead');
 
     let duration = 0;
 
@@ -1168,6 +1175,8 @@
       hEnd.setAttribute('aria-valuenow', (b > 0 ? b : effEnd).toFixed(1));
       const len = effEnd - a;
       if (lenEl) lenEl.textContent = (b > 0 && len > 0) ? len.toFixed(1) + 's clip' : 'full track';
+      if (bubStart) bubStart.textContent = _fmtTime(a);
+      if (bubEnd)   bubEnd.textContent   = _fmtTime(b > 0 ? b : effEnd);
     };
 
     // Metadata gives us the length the handles map onto.
@@ -1256,7 +1265,13 @@
 
     if (action === 'toggle-settings') {
       const panel = el.soundsLibrary.querySelector(`.song-settings[data-settings-for="${songId}"]`);
-      if (panel) panel.classList.toggle('hidden');
+      if (!panel) return;
+      panel.classList.toggle('hidden');
+      if (!panel.classList.contains('hidden')) {
+        const song = state.songs.find(s => (s.SongId || s.id) === songId);
+        const url  = song ? (song.SongUrl || song.songLink || song.url || song.musicUrl || "") : "";
+        _initTrimBar(panel, url);
+      }
       return;
     }
 
@@ -1278,14 +1293,42 @@
         aud.id = 'song-preview-player';
         document.body.appendChild(aud);
       }
-      // Drop any stop-watcher left over from a previous trimmed preview.
+      // Drop any watchers left over from a previous trimmed preview.
       if (aud._trimWatcher) {
         aud.removeEventListener('timeupdate', aud._trimWatcher);
         aud._trimWatcher = null;
       }
+      if (aud._headWatcher) {
+        aud.removeEventListener('timeupdate', aud._headWatcher);
+        aud._headWatcher = null;
+      }
 
       aud.src = url;
       aud.currentTime = start;
+
+      // Drive a playhead across the trim bar for THIS song, and hide it on
+      // every other open panel — only one clip plays at a time.
+      document.querySelectorAll('.song-trim-playhead.active').forEach(p => p.classList.remove('active'));
+      const bar      = panel.querySelector('.song-trim-bar');
+      const duration = bar ? Number(bar.dataset.duration) || 0 : 0;
+      const playhead = panel.querySelector('.song-trim-playhead');
+
+      if (playhead && duration > 0) {
+        playhead.classList.add('active');
+        aud._headWatcher = () => {
+          playhead.style.left = Math.min(100, (aud.currentTime / duration) * 100) + '%';
+        };
+        aud.addEventListener('timeupdate', aud._headWatcher);
+        const hidePlayhead = () => {
+          playhead.classList.remove('active');
+          aud.removeEventListener('timeupdate', aud._headWatcher);
+          aud.removeEventListener('pause', hidePlayhead);
+          aud.removeEventListener('ended', hidePlayhead);
+          aud._headWatcher = null;
+        };
+        aud.addEventListener('pause', hidePlayhead, { once: true });
+        aud.addEventListener('ended', hidePlayhead, { once: true });
+      }
 
       if (end > start) {
         aud._trimWatcher = () => {

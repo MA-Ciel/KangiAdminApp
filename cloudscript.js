@@ -1197,8 +1197,8 @@ function _syncPlayerToFirebase(playFabId, displayName, email, avatarUrl, additio
         });
         var td = (titleData && titleData.Data) ? titleData.Data : {};
 
-        var projectId      = td["Firebase_ProjectId"]  || "dancewithmii-app";
-        var apiKey         = td["Firebase_ApiKey"]     || "";
+        var projectId      = td["Firebase_ProjectId"]  || "dance-withmii";
+        var apiKey         = td["Firebase_ApiKey"]     || "AIzaSyBArP6gJqVhhdDTZ2XLINBYIvPMmON7EFM";
         var collectionName = td["Firebase_Collection"] || "users";
         var dbType         = td["Firebase_DbType"]     || "firestore"; // 'firestore' or 'rtdb'
         var dbUrl          = td["Firebase_DbUrl"]      || "";

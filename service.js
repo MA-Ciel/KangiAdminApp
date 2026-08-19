@@ -495,17 +495,32 @@ const KangiService = (function () {
 
   const FIREBASE_CONFIG_KEY = 'kangi_firebase_config';
 
+  const DEFAULT_FIREBASE_CONFIG = {
+    apiKey:            "AIzaSyBArP6gJqVhhdDTZ2XLINBYIvPMmON7EFM",
+    authDomain:        "dance-withmii.firebaseapp.com",
+    projectId:         "dance-withmii",
+    storageBucket:     "dance-withmii.firebasestorage.app",
+    messagingSenderId: "227901605532",
+    appId:             "1:227901605532:web:a01759182a1d1546db4f59",
+    measurementId:     "G-ZPTK46HEBC",
+    dbType:            "firestore",
+    collectionName:    "users"
+  };
+
   /* Default or saved Firebase Config */
   function getFirebaseConfig() {
     try {
       const saved = localStorage.getItem(FIREBASE_CONFIG_KEY);
       if (saved) {
-        return JSON.parse(saved);
+        const parsed = JSON.parse(saved);
+        if (parsed.projectId || parsed.apiKey) {
+          return { ...DEFAULT_FIREBASE_CONFIG, ...parsed };
+        }
       }
     } catch (e) {
       console.warn('[Firebase] Failed to parse saved config:', e);
     }
-    return null;
+    return DEFAULT_FIREBASE_CONFIG;
   }
 
   /* Save Firebase Config */

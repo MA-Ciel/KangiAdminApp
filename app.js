@@ -1082,6 +1082,21 @@
 
         <div class="song-settings-group">
           <span class="song-settings-label">Trim window &mdash; seconds into the original file</span>
+          <div class="song-trim-bar" data-ready="false" data-duration="0">
+            <div class="song-trim-track">
+              <div class="song-trim-range"></div>
+              <div class="song-trim-playhead"></div>
+              <div class="song-trim-handle" data-handle="start" tabindex="0" role="slider"
+                   aria-label="Trim start" aria-valuemin="0" aria-valuenow="${trimStart}"></div>
+              <div class="song-trim-handle" data-handle="end" tabindex="0" role="slider"
+                   aria-label="Trim end" aria-valuemin="0" aria-valuenow="${trimEnd}"></div>
+            </div>
+            <div class="song-trim-scale">
+              <span>0:00</span>
+              <span class="song-trim-total">loading&hellip;</span>
+            </div>
+          </div>
+
           <div class="song-trim-row">
             <label>Start <input type="number" class="song-trim-start" min="0" step="0.1" value="${trimStart}" /></label>
             <label>End <input type="number" class="song-trim-end" min="0" step="0.1" value="${trimEnd}" /></label>
@@ -1103,6 +1118,133 @@
       entry.appendChild(panel);
       el.soundsLibrary.appendChild(entry);
     });
+  }
+
+  /* ── Trim bar ──────────────────────────────────────────────────────────
+     Drag two handles over the track length instead of typing seconds. The bar
+     and the number inputs are two views of the same value and stay in sync.
+     Needs the real duration, so it stays disabled until metadata loads. */
+
+  function _fmtTime(sec) {
+    if (!isFinite(sec) || sec < 0) sec = 0;
+    const m = Math.floor(sec / 60);
+    const s = Math.floor(sec % 60);
+    return `${m}:${String(s).padStart(2, '0')}`;
+  }
+
+  function _initTrimBar(panel, url) {
+    const bar = panel.querySelector('.song-trim-bar');
+    if (!bar || bar.dataset.bound === '1' || !url) return;
+    bar.dataset.bound = '1';
+
+    const track     = bar.querySelector('.song-trim-track');
+    const range     = bar.querySelector('.song-trim-range');
+    const hStart    = bar.querySelector('[data-handle="start"]');
+    const hEnd      = bar.querySelector('[data-handle="end"]');
+    const totalEl   = bar.querySelector('.song-trim-total');
+    const startIn   = panel.querySelector('.song-trim-start');
+    const endIn     = panel.querySelector('.song-trim-end');
+    const lenEl     = panel.querySelector('.song-trim-len');
+
+    let duration = 0;
+
+    const clampVals = () => {
+      let a = Number(startIn.value) || 0;
+      let b = Number(endIn.value)   || 0;          // 0 = natural end
+      a = Math.max(0, Math.min(a, duration));
+      const effEnd = b > 0 ? Math.max(0, Math.min(b, duration)) : duration;
+      return { a, b, effEnd };
+    };
+
+    const paint = () => {
+      const { a, b, effEnd } = clampVals();
+      const pa = duration ? (a / duration) * 100 : 0;
+      const pb = duration ? (effEnd / duration) * 100 : 100;
+      range.style.left  = pa + '%';
+      range.style.width = Math.max(0, pb - pa) + '%';
+      hStart.style.left = pa + '%';
+      hEnd.style.left   = pb + '%';
+      hStart.setAttribute('aria-valuenow', a.toFixed(1));
+      hEnd.setAttribute('aria-valuenow', (b > 0 ? b : effEnd).toFixed(1));
+      const len = effEnd - a;
+      if (lenEl) lenEl.textContent = (b > 0 && len > 0) ? len.toFixed(1) + 's clip' : 'full track';
+    };
+
+    // Metadata gives us the length the handles map onto.
+    const probe = new Audio();
+    probe.preload = 'metadata';
+    probe.addEventListener('loadedmetadata', () => {
+      duration = probe.duration || 0;
+      if (!isFinite(duration) || duration <= 0) {
+        totalEl.textContent = 'unknown length';
+        return;
+      }
+      bar.dataset.duration = String(duration);
+      bar.dataset.ready = 'true';
+      totalEl.textContent = _fmtTime(duration);
+      hStart.setAttribute('aria-valuemax', duration.toFixed(1));
+      hEnd.setAttribute('aria-valuemax', duration.toFixed(1));
+      paint();
+    });
+    probe.addEventListener('error', () => {
+      totalEl.textContent = 'could not read length — type seconds below';
+    });
+    probe.src = url;
+
+    const secondsAt = (clientX) => {
+      const r = track.getBoundingClientRect();
+      const ratio = Math.max(0, Math.min(1, (clientX - r.left) / r.width));
+      return ratio * duration;
+    };
+
+    let dragging = null;
+    const onDown = (e) => {
+      if (!duration) return;
+      dragging = e.currentTarget.dataset.handle;
+      e.currentTarget.setPointerCapture(e.pointerId);
+      e.preventDefault();
+    };
+    const onMove = (e) => {
+      if (!dragging || !duration) return;
+      const t = secondsAt(e.clientX);
+      if (dragging === 'start') {
+        const { effEnd } = clampVals();
+        startIn.value = Math.min(t, Math.max(0, effEnd - 0.1)).toFixed(1);
+      } else {
+        const a = Number(startIn.value) || 0;
+        // Snapping the end handle to the far right means "natural end" (0).
+        endIn.value = (t >= duration - 0.05) ? 0 : Math.max(t, a + 0.1).toFixed(1);
+      }
+      paint();
+    };
+    const onUp = (e) => {
+      if (!dragging) return;
+      dragging = null;
+      try { e.currentTarget.releasePointerCapture(e.pointerId); } catch (err) {}
+    };
+
+    [hStart, hEnd].forEach(h => {
+      h.addEventListener('pointerdown', onDown);
+      h.addEventListener('pointermove', onMove);
+      h.addEventListener('pointerup', onUp);
+      h.addEventListener('pointercancel', onUp);
+      h.addEventListener('keydown', (e) => {
+        if (!duration) return;
+        const step = e.shiftKey ? 1 : 0.1;
+        const which = h.dataset.handle;
+        const input = which === 'start' ? startIn : endIn;
+        let v = Number(input.value) || 0;
+        if (which === 'end' && v === 0) v = duration;
+        if (e.key === 'ArrowLeft')  { input.value = Math.max(0, v - step).toFixed(1); paint(); e.preventDefault(); }
+        if (e.key === 'ArrowRight') { input.value = Math.min(duration, v + step).toFixed(1); paint(); e.preventDefault(); }
+      });
+    });
+
+    // Typing in the number inputs moves the handles.
+    startIn.addEventListener('input', paint);
+    endIn.addEventListener('input', paint);
+
+    paint();
   }
 
   // Handle Approve/Delete/Preview actions

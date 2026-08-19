@@ -2558,7 +2558,22 @@ input::placeholder, textarea::placeholder { color: var(--text-3); }
   outline-offset: 2px;
 }
 
-.song-mode-check input { accent-color: var(--purple); cursor: pointer; }
+/* The global `input, textarea, select` rule sets width:100% and a pill border,
+   which turns a bare checkbox into a full-width blob. Opt back out here. */
+.song-mode-check input[type="checkbox"] {
+  width: auto;
+  min-width: 0;
+  flex: 0 0 auto;
+  padding: 0;
+  margin: 0;
+  border: none;
+  border-radius: 3px;
+  background: none;
+  accent-color: var(--purple);
+  cursor: pointer;
+}
+
+.song-mode-check span { white-space: nowrap; }
 
 .song-trim-row {
   display: flex;
@@ -2598,3 +2613,82 @@ input::placeholder, textarea::placeholder { color: var(--text-3); }
 }
 
 .song-settings-actions .btn { text-decoration: none; }
+
+
+/* ---- Trim bar: drag the window instead of typing seconds ---- */
+.song-trim-bar {
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+  padding: 0.15rem 0 0;
+}
+
+.song-trim-bar[data-ready="false"] { opacity: 0.5; pointer-events: none; }
+
+.song-trim-track {
+  position: relative;
+  height: 40px;
+  border-radius: var(--radius-sm, 8px);
+  background: rgba(27, 12, 54, 0.8);
+  border: 1px solid var(--border);
+  cursor: pointer;
+  touch-action: none;
+}
+
+.song-trim-range {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  background: rgba(139, 92, 246, 0.28);
+  border-left: 2px solid var(--purple);
+  border-right: 2px solid var(--purple);
+  pointer-events: none;
+}
+
+.song-trim-handle {
+  position: absolute;
+  top: -4px;
+  width: 14px;
+  height: calc(100% + 8px);
+  margin-left: -7px;
+  border-radius: 4px;
+  background: var(--purple);
+  cursor: ew-resize;
+  touch-action: none;
+  display: grid;
+  place-items: center;
+}
+
+.song-trim-handle::after {
+  content: '';
+  width: 2px;
+  height: 14px;
+  background: rgba(255, 255, 255, 0.75);
+  border-radius: 1px;
+}
+
+.song-trim-handle:focus-visible {
+  outline: 2px solid var(--pink);
+  outline-offset: 2px;
+}
+
+.song-trim-playhead {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  width: 2px;
+  background: var(--pink);
+  pointer-events: none;
+  display: none;
+}
+
+.song-trim-playhead.active { display: block; }
+
+.song-trim-scale {
+  display: flex;
+  justify-content: space-between;
+  font-family: ui-monospace, monospace;
+  font-size: 0.72rem;
+  font-variant-numeric: tabular-nums;
+  color: var(--text-3);
+}

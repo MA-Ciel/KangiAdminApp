@@ -488,6 +488,234 @@ const KangiService = (function () {
     });
   }
 
+  /* ============================================================
+     FIREBASE SERVICE — Player List Source
+     Fetches player list from Cloud Firestore or Realtime Database.
+     ============================================================ */
+
+  const FIREBASE_CONFIG_KEY = 'kangi_firebase_config';
+
+  /* Default or saved Firebase Config */
+  function getFirebaseConfig() {
+    try {
+      const saved = localStorage.getItem(FIREBASE_CONFIG_KEY);
+      if (saved) {
+        return JSON.parse(saved);
+      }
+    } catch (e) {
+      console.warn('[Firebase] Failed to parse saved config:', e);
+    }
+    return null;
+  }
+
+  /* Save Firebase Config */
+  function saveFirebaseConfig(config) {
+    try {
+      if (!config) {
+        localStorage.removeItem(FIREBASE_CONFIG_KEY);
+        return true;
+      }
+      localStorage.setItem(FIREBASE_CONFIG_KEY, JSON.stringify(config));
+      // Re-init if SDK available
+      initFirebase(config);
+      return true;
+    } catch (e) {
+      console.error('[Firebase] Save config error:', e);
+      return false;
+    }
+  }
+
+  /* Initialize Firebase App instance */
+  let _firebaseApp = null;
+  function initFirebase(customConfig) {
+    if (typeof firebase === 'undefined') {
+      console.warn('[Firebase] Firebase SDK not loaded in window.');
+      return null;
+    }
+    const config = customConfig || getFirebaseConfig();
+    if (!config || (!config.apiKey && !config.projectId)) {
+      return null;
+    }
+    try {
+      if (firebase.apps && firebase.apps.length > 0) {
+        // Find or delete existing default app if config changed
+        _firebaseApp = firebase.apps[0];
+      } else {
+        _firebaseApp = firebase.initializeApp({
+          apiKey:            config.apiKey,
+          authDomain:        config.authDomain || (config.projectId ? `${config.projectId}.firebaseapp.com` : undefined),
+          projectId:         config.projectId,
+          storageBucket:     config.storageBucket || (config.projectId ? `${config.projectId}.appspot.com` : undefined),
+          messagingSenderId: config.messagingSenderId,
+          appId:             config.appId,
+          databaseURL:       config.databaseURL
+        });
+      }
+      return _firebaseApp;
+    } catch (err) {
+      console.error('[Firebase] initFirebase error:', err);
+      return null;
+    }
+  }
+
+  /* Test connection to Firebase */
+  async function testFirebaseConnection(config) {
+    const app = initFirebase(config);
+    if (!app && typeof firebase === 'undefined') {
+      return { success: false, error: 'Firebase SDK is not available in browser.' };
+    }
+    const cfg = config || getFirebaseConfig();
+    if (!cfg || (!cfg.apiKey && !cfg.projectId)) {
+      return { success: false, error: 'Firebase configuration is empty. Please enter Project ID and API Key.' };
+    }
+
+    const dbType = cfg.dbType || 'firestore';
+    const collectionName = (cfg.collectionName || 'users').trim();
+
+    try {
+      if (dbType === 'rtdb') {
+        if (!cfg.databaseURL) {
+          return { success: false, error: 'Realtime Database requires a Database URL (e.g. https://<project>.firebaseio.com).' };
+        }
+        const db = firebase.database();
+        const snapshot = await db.ref(collectionName).limitToFirst(5).once('value');
+        const count = snapshot.numChildren ? snapshot.numChildren() : 0;
+        return { success: true, message: `Connected to Realtime Database successfully! Found ${count} record(s).` };
+      } else {
+        const db = firebase.firestore();
+        const snapshot = await db.collection(collectionName).limit(5).get();
+        return { success: true, message: `Connected to Cloud Firestore successfully! Found ${snapshot.size} document(s) in "${collectionName}".` };
+      }
+    } catch (err) {
+      console.error('[Firebase] Connection test error:', err);
+      return { success: false, error: err.message || 'Failed to connect to Firebase.' };
+    }
+  }
+
+  /* Fetch all player records from Firebase and normalize structure */
+  async function getFirebaseUsers() {
+    const cfg = getFirebaseConfig();
+    if (!cfg || (!cfg.apiKey && !cfg.projectId)) {
+      console.log('[Firebase] No Firebase config saved, falling back to live PlayFab registry.');
+      const pfResult = await getAllUsers();
+      if (pfResult && pfResult.status === 'complete' && Array.isArray(pfResult.users)) {
+        return {
+          source: 'playfab-fallback',
+          users: pfResult.users,
+          isFallback: true
+        };
+      }
+      return { source: 'none', users: [], isFallback: true };
+    }
+
+    const app = initFirebase(cfg);
+    if (!app && typeof firebase === 'undefined') {
+      throw new Error('Firebase SDK is not loaded.');
+    }
+
+    const dbType = cfg.dbType || 'firestore';
+    const collectionName = (cfg.collectionName || 'users').trim();
+    let rawList = [];
+
+    if (dbType === 'rtdb') {
+      const db = firebase.database();
+      const snapshot = await db.ref(collectionName).once('value');
+      const val = snapshot.val();
+      if (val) {
+        if (Array.isArray(val)) {
+          rawList = val.filter(Boolean);
+        } else if (typeof val === 'object') {
+          rawList = Object.keys(val).map(key => ({ _fbKey: key, ...val[key] }));
+        }
+      }
+    } else {
+      const db = firebase.firestore();
+      const snapshot = await db.collection(collectionName).get();
+      snapshot.forEach(doc => {
+        rawList.push({ _fbDocId: doc.id, ...doc.data() });
+      });
+    }
+
+    // Normalize each user record
+    const normalizedUsers = rawList.map(item => {
+      const playFabId = item.playFabId || item.PlayFabId || item.playfabId || item.playfab_id || item.uid || item.userId || item._fbDocId || item._fbKey || '';
+      const displayName = item.displayName || item.DisplayName || item.name || item.Name || item.playerName || item.player_name || item.username || item.userName || '';
+      const email = item.email || item.Email || item.userEmail || '';
+      const avatarUrl = item.avatarUrl || item.avatar || item.photoURL || item.photoUrl || item.image || item.imageUrl || '';
+      const isBanned = !!(item.isBanned || item.banned || item.banStatus);
+      const isAdmin = !!(item.isAdmin || item.admin || item.is_admin);
+      const created = item.createdAt || item.created || item.joined || item.created_at || null;
+      const lastLogin = item.lastLogin || item.last_login || item.lastSeen || item.updatedAt || null;
+
+      return {
+        playFabId: String(playFabId),
+        displayName: displayName || (email ? email.split('@')[0] : (playFabId ? 'Player ' + String(playFabId).slice(-4) : 'Player')),
+        email: email,
+        username: item.username || '',
+        avatarUrl: avatarUrl,
+        isBanned: isBanned,
+        isAdmin: isAdmin,
+        created: created ? (typeof created === 'object' && created.toDate ? created.toDate().toISOString() : created) : null,
+        lastLogin: lastLogin ? (typeof lastLogin === 'object' && lastLogin.toDate ? lastLogin.toDate().toISOString() : lastLogin) : null,
+        unlockedCharacters: Array.isArray(item.unlockedCharacters) ? item.unlockedCharacters : [],
+        rawFirebaseData: item
+      };
+    });
+
+    // Sort alphabetically by displayName / name
+    normalizedUsers.sort((a, b) => {
+      const nameA = (a.displayName || a.username || a.email || '').toLowerCase();
+      const nameB = (b.displayName || b.username || b.email || '').toLowerCase();
+      return nameA.localeCompare(nameB);
+    });
+
+    return {
+      source: 'firebase',
+      collection: collectionName,
+      dbType: dbType,
+      users: normalizedUsers,
+      isFallback: false
+    };
+  }
+
+  /* Fetch comprehensive internal details on-demand via PlayFab API */
+  async function getPlayFabUserDetails(playFabId) {
+    if (!playFabId) {
+      return { success: false, error: 'No PlayFab ID provided.' };
+    }
+
+    try {
+      const [charRes, notifRes] = await Promise.allSettled([
+        getUserCharacters(playFabId),
+        getNotifications(playFabId)
+      ]);
+
+      const unlockedCharacters = (charRes.status === 'fulfilled' && charRes.value && Array.isArray(charRes.value.unlockedCharacters))
+        ? charRes.value.unlockedCharacters
+        : [];
+
+      const notifications = (notifRes.status === 'fulfilled' && notifRes.value && Array.isArray(notifRes.value.notifications))
+        ? notifRes.value.notifications
+        : [];
+
+      return {
+        success: true,
+        playFabId,
+        unlockedCharacters,
+        notifications
+      };
+    } catch (err) {
+      console.error('[PlayFab] Error fetching internal details for', playFabId, err);
+      return {
+        success: false,
+        playFabId,
+        unlockedCharacters: [],
+        notifications: [],
+        error: err?.message || 'Failed to fetch PlayFab internal data.'
+      };
+    }
+  }
+
   /* ── Public API ── */
   return {
     init,
@@ -517,7 +745,15 @@ const KangiService = (function () {
     deleteSupportMessage,
     getCloudinaryConfig,
     saveCloudinaryConfig,
-    uploadToCloudinary
+    uploadToCloudinary,
+    // Firebase & PlayFab Deep Fetch APIs
+    getFirebaseConfig,
+    saveFirebaseConfig,
+    initFirebase,
+    testFirebaseConnection,
+    getFirebaseUsers,
+    getPlayFabUserDetails
   };
 
 })();
+

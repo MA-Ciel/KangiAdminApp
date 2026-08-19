@@ -1183,8 +1183,101 @@ handlers.testNotificationSystem = function(args, context) {
 // Queries PlayFab real player accounts directly with pagination & admin security.
 // ====================================================================================
 
+// ====================================================================================
+// FIREBASE REST SYNC HELPER (Cloud Firestore & Realtime Database)
+// Automatically creates or updates the player's document in Firebase from CloudScript.
+// ====================================================================================
+function _syncPlayerToFirebase(playFabId, displayName, email, avatarUrl, additionalFields) {
+    if (!playFabId) return { success: false, error: "No playFabId provided" };
+
+    try {
+        // Read Title Internal Data settings for Firebase (or fallback to defaults)
+        var titleData = server.GetTitleInternalData({
+            Keys: ["Firebase_ProjectId", "Firebase_ApiKey", "Firebase_Collection", "Firebase_DbType", "Firebase_DbUrl"]
+        });
+        var td = (titleData && titleData.Data) ? titleData.Data : {};
+
+        var projectId      = td["Firebase_ProjectId"]  || "dancewithmii-app";
+        var apiKey         = td["Firebase_ApiKey"]     || "";
+        var collectionName = td["Firebase_Collection"] || "users";
+        var dbType         = td["Firebase_DbType"]     || "firestore"; // 'firestore' or 'rtdb'
+        var dbUrl          = td["Firebase_DbUrl"]      || "";
+
+        var nowIso = new Date().toISOString();
+        var safeName = displayName || "";
+        var safeEmail = email || "";
+        var safeAvatar = avatarUrl || "";
+
+        // If displayName or email are empty, try fetching from PlayFab Account Info
+        if (!safeName || !safeEmail) {
+            try {
+                var accInfo = server.GetUserAccountInfo({ PlayFabId: playFabId });
+                if (accInfo && accInfo.UserInfo) {
+                    if (!safeName && accInfo.UserInfo.TitleInfo && accInfo.UserInfo.TitleInfo.DisplayName) {
+                        safeName = accInfo.UserInfo.TitleInfo.DisplayName;
+                    }
+                    if (!safeName && accInfo.UserInfo.Username) {
+                        safeName = accInfo.UserInfo.Username;
+                    }
+                    if (!safeEmail && accInfo.UserInfo.PrivateInfo && accInfo.UserInfo.PrivateInfo.Email) {
+                        safeEmail = accInfo.UserInfo.PrivateInfo.Email;
+                    }
+                }
+            } catch (eAcc) {}
+        }
+
+        if (dbType === "rtdb") {
+            // Realtime Database REST API: PATCH /users/{playFabId}.json
+            var rtdbUrl = dbUrl || ("https://" + projectId + "-default-rtdb.firebaseio.com");
+            var rtdbEndpoint = rtdbUrl + "/" + encodeURIComponent(collectionName) + "/" + encodeURIComponent(playFabId) + ".json";
+            if (apiKey) rtdbEndpoint += "?auth=" + encodeURIComponent(apiKey);
+
+            var rtdbPayload = {
+                playFabId:   playFabId,
+                displayName: safeName || ("Player " + String(playFabId).slice(-4)),
+                email:       safeEmail,
+                avatarUrl:   safeAvatar,
+                updatedAt:   nowIso
+            };
+            if (additionalFields && typeof additionalFields === "object") {
+                for (var k in additionalFields) {
+                    if (additionalFields.hasOwnProperty(k)) rtdbPayload[k] = additionalFields[k];
+                }
+            }
+
+            var rtdbRes = http.request(rtdbEndpoint, "patch", JSON.stringify(rtdbPayload), "application/json", null);
+            return { success: true, dbType: "rtdb", response: rtdbRes };
+        } else {
+            // Cloud Firestore REST API: PATCH /projects/{projectId}/databases/(default)/documents/{collection}/{playFabId}
+            var firestoreEndpoint = "https://firestore.googleapis.com/v1/projects/" + encodeURIComponent(projectId) +
+                                    "/databases/(default)/documents/" + encodeURIComponent(collectionName) + "/" + encodeURIComponent(playFabId);
+            if (apiKey) {
+                firestoreEndpoint += "?key=" + encodeURIComponent(apiKey);
+            }
+
+            var fields = {
+                playFabId:   { stringValue: String(playFabId) },
+                displayName: { stringValue: String(safeName || ("Player " + String(playFabId).slice(-4))) },
+                email:       { stringValue: String(safeEmail) },
+                avatarUrl:   { stringValue: String(safeAvatar) },
+                lastLogin:   { stringValue: nowIso }
+            };
+            if (additionalFields && additionalFields.isNewRegistration) {
+                fields.createdAt = { stringValue: nowIso };
+            }
+
+            var firestorePayload = { fields: fields };
+            var fsRes = http.request(firestoreEndpoint, "patch", JSON.stringify(firestorePayload), "application/json", null);
+            return { success: true, dbType: "firestore", response: fsRes };
+        }
+    } catch (err) {
+        log.error("[FirebaseSync] Error syncing player " + playFabId + ": " + (err.message || JSON.stringify(err)));
+        return { success: false, error: err.message || String(err) };
+    }
+}
+
 handlers.adminUserWorkflow = function (args, context) {
-    var CLOUDSCRIPT_VERSION = "3.0.0-direct-playfab";
+    var CLOUDSCRIPT_VERSION = "3.1.0-firebase-sync";
     var action = args.action;
 
     // ── 1. Admin Authentication Check ──
@@ -1197,105 +1290,136 @@ handlers.adminUserWorkflow = function (args, context) {
         }
     } catch (e) {}
 
-    // Allow registerUser without admin privileges (called on player login)
+    // Allow registerUser without admin privileges (called on player login/registration)
     if (action !== "registerUser" && !isCallerAdmin) {
         return { success: false, error: "Unauthorized: Administrator privileges required." };
     }
 
     // ====================================================================================
-    // A. REGISTER USER — No-op acknowledgment (no Title Data registry dependency)
+    // A. REGISTER USER — Records the player into a LIVE PlayFab registry and syncs to Firebase
+    //    Called by game client on registration/login or automatically triggered.
     // ====================================================================================
     if (action === "registerUser") {
-        return { success: true, version: CLOUDSCRIPT_VERSION, message: "User session acknowledged." };
+        var REGISTRY_GROUP_ID = "AllRegisteredPlayers";
+        var isNewReg = false;
+
+        // 1. Save/refresh basic profile fields on the player's own UserData
+        try {
+            var existing = server.GetUserData({ PlayFabId: callerId, Keys: ["RegisteredAt"] });
+            var alreadyRegistered = !!(existing && existing.Data && existing.Data.RegisteredAt);
+            isNewReg = !alreadyRegistered;
+
+            var dataToSet = {
+                DisplayName: args.displayName || "",
+                Email:       args.email       || "",
+                AvatarUrl:   args.avatarUrl    || ""
+            };
+            if (!alreadyRegistered) {
+                dataToSet.RegisteredAt = new Date().toISOString();
+            }
+            server.UpdateUserData({ PlayFabId: callerId, Data: dataToSet, Permission: "Private" });
+        } catch (eUd) {
+            log.error("registerUser: failed to write UserData for " + callerId + ": " + eUd);
+        }
+
+        // 2. Add the player to the live registry group
+        try {
+            server.AddSharedGroupMembers({ SharedGroupId: REGISTRY_GROUP_ID, PlayFabIds: [callerId] });
+        } catch (eGroup) {
+            try {
+                server.CreateSharedGroup({ SharedGroupId: REGISTRY_GROUP_ID });
+                server.AddSharedGroupMembers({ SharedGroupId: REGISTRY_GROUP_ID, PlayFabIds: [callerId] });
+            } catch (eCreate) {
+                log.error("registerUser: failed to add " + callerId + " to registry group: " + eCreate);
+            }
+        }
+
+        // 3. Automatic Firebase Document Sync via REST API
+        var fbSyncResult = _syncPlayerToFirebase(callerId, args.displayName, args.email, args.avatarUrl, { isNewRegistration: isNewReg });
+
+        return { 
+            success: true, 
+            version: CLOUDSCRIPT_VERSION, 
+            message: "Player registered in PlayFab and synced to Firebase.",
+            firebaseSync: fbSyncResult
+        };
     }
 
     // ====================================================================================
-    // B. GET ALL USERS — Two-step Admin API export (post GetPlayersInSegment retirement)
+    // B. GET ALL USERS — LIVE read from the "AllRegisteredPlayers" Shared Group.
     //
-    //    Step 1 (action "getAllUsers"):
-    //      Calls Admin REST API ExportPlayersInSegment.
-    //      Returns { exportId } immediately — does NOT block waiting for the export.
+    //    Replaces the old Segment Export flow (ExportPlayersInSegment / GetSegmentExport),
+    //    which snapshots segment membership and can lag behind brand-new registrations.
+    //    Membership in the Shared Group is written synchronously by "registerUser", so a
+    //    player who just registered shows up here immediately — no polling, no wait.
     //
-    //    Step 2 (action "getExportResult"):
-    //      Polls Admin REST API GetSegmentExport with the exportId.
-    //      When state === "Complete", downloads the TSV fragment files, parses player
-    //      profiles, enriches each with IsAdmin/IsBanned from UserData, and returns
-    //      the full player list.
-    //
-    //    Secret Key requirement:
-    //      Store your PlayFab Title Secret Key in Title Internal Data under the key
-    //      "PlayFabSecretKey". This value is server-only and never sent to clients.
-    //
-    //    Segment ID:
-    //      Pass segmentId in args, or rely on the default "39DB56B86E752167".
-    //      Verify your All Players segment ID in PlayFab Game Manager → Segments.
+    //    Returns status:"complete" directly (single round trip, no exportId/poll step).
     // ====================================================================================
     if (action === "getAllUsers") {
-        var segmentId = (args.segmentId && args.segmentId.trim()) ? args.segmentId.trim() : "39DB56B86E752167";
+        var REGISTRY_GROUP_ID = "AllRegisteredPlayers";
+        var rawPlayers = [];
 
-        // Retrieve secret key from server-only TitleInternalData
-        var secretKey = "";
+        var memberIds = [];
         try {
-            var skData = server.GetTitleInternalData({ Keys: ["PlayFabSecretKey", "DeveloperSecretKey"] });
-            if (skData && skData.Data) {
-                secretKey = skData.Data["PlayFabSecretKey"] || skData.Data["DeveloperSecretKey"] || "";
+            var sgData = server.GetSharedGroupData({ SharedGroupId: REGISTRY_GROUP_ID, GetMembers: true });
+            if (sgData && sgData.Members) {
+                for (var mi = 0; mi < sgData.Members.length; mi++) {
+                    memberIds.push(sgData.Members[mi].PlayFabId);
+                }
             }
-        } catch (e) {
-            log.error("getAllUsers: failed to read TitleInternalData for secret key: " + e);
+        } catch (eGroup) {
+            // Group not created yet (no one has registered) — treat as empty list, not an error.
+            log.info("getAllUsers: registry group not found or empty: " + eGroup);
         }
 
-        if (!secretKey) {
-            return {
-                success: false,
-                error:   "Server configuration error: PlayFabSecretKey not found in Title Internal Data. " +
-                         "Please add your Title Secret Key under Game Manager → Title Data → Internal → key: PlayFabSecretKey"
-            };
-        }
+        log.info("getAllUsers: " + memberIds.length + " player(s) in live registry");
 
-        // Call Admin API: ExportPlayersInSegment
-        var exportUrl = "https://182E5E.playfabapi.com/Admin/ExportPlayersInSegment";
-        try {
-            var exportReqBody = JSON.stringify({ SegmentId: segmentId });
-            var exportRawRes  = http.request(
-                exportUrl,
-                "POST",
-                exportReqBody,
-                "application/json",
-                { "X-SecretKey": secretKey, "Content-Type": "application/json" }
-            );
-            var exportRes = JSON.parse(exportRawRes);
+        for (var pi = 0; pi < memberIds.length; pi++) {
+            var pfId = memberIds[pi];
+            try {
+                var ud = server.GetUserData({
+                    PlayFabId: pfId,
+                    Keys: ["DisplayName", "Email", "AvatarUrl", "RegisteredAt", "IsAdmin", "IsBanned"]
+                });
+                var d = (ud && ud.Data) ? ud.Data : {};
 
-            // Admin API wraps results in exportRes.data
-            var exportData = exportRes.data || exportRes;
-            if (!exportData || !exportData.ExportId) {
-                log.error("getAllUsers: ExportPlayersInSegment bad response: " + exportRawRes);
-                return {
-                    success: false,
-                    error:   "ExportPlayersInSegment did not return an ExportId. " +
-                             "Verify your segment ID (" + segmentId + ") exists in Game Manager."
-                };
+                var dName = d.DisplayName ? d.DisplayName.Value : "";
+                var dEmail = d.Email ? d.Email.Value : "";
+                if (!dName && dEmail) dName = dEmail.split("@")[0];
+                if (!dName) dName = "Player " + pfId.slice(-4);
+
+                rawPlayers.push({
+                    playFabId:   pfId,
+                    displayName: dName,
+                    email:       dEmail,
+                    avatarUrl:   d.AvatarUrl ? d.AvatarUrl.Value : "",
+                    isAdmin:     !!(d.IsAdmin  && d.IsAdmin.Value  === "true"),
+                    isBanned:    !!(d.IsBanned && d.IsBanned.Value === "true"),
+                    created:     d.RegisteredAt ? d.RegisteredAt.Value : "",
+                    lastLogin:   ""
+                });
+            } catch (eUser) {
+                log.error("getAllUsers: failed to read UserData for " + pfId + ": " + eUser);
+                // Skip this player rather than failing the whole list
             }
-
-            log.info("getAllUsers: export started, ExportId=" + exportData.ExportId);
-            return {
-                success:   true,
-                exportId:  exportData.ExportId,
-                segmentId: segmentId,
-                status:    "pending",
-                version:   CLOUDSCRIPT_VERSION
-            };
-
-        } catch (errExport) {
-            log.error("getAllUsers: ExportPlayersInSegment failed: " + JSON.stringify(errExport));
-            return {
-                success: false,
-                error:   "ExportPlayersInSegment request failed: " + (errExport.message || JSON.stringify(errExport))
-            };
         }
+
+        log.info("getAllUsers: returning " + rawPlayers.length + " players from live registry");
+        return {
+            success: true,
+            status:  "complete",
+            users:   rawPlayers,
+            total:   rawPlayers.length,
+            source:  "shared_group_live",
+            version: CLOUDSCRIPT_VERSION
+        };
     }
 
     // ====================================================================================
-    // B2. GET EXPORT RESULT — Poll & download the export started by getAllUsers
+    // B2. GET EXPORT RESULT — LEGACY. getAllUsers no longer starts an export (it now
+    //     returns status:"complete" immediately from the live registry above), so the
+    //     client never calls this anymore. Left in place only for backward compatibility
+    //     in case anything old still calls it directly.
     //     Returns { status: "pending" } if still processing, or
     //             { status: "complete", users: [...] } when done.
     // ====================================================================================
@@ -1884,3 +2008,62 @@ handlers.supportWorkflow = function (args, context) {
 
     return { success: false, error: "Unknown action: " + action };
 };
+
+// ====================================================================================
+// PLAYSTREAM AUTOMATION & DIRECT HANDLERS FOR FIREBASE SYNC
+// 1. onPlayerCreated: Fires on PlayFab PlayStream 'player_created' / 'player_logged_in' Rule
+// 2. syncPlayerToFirebase: Explicit trigger from client or admin tool
+// ====================================================================================
+
+handlers.onPlayerCreated = function (args, context) {
+    var playerId = null;
+    var displayName = "";
+    var email = "";
+    var avatarUrl = "";
+
+    if (context && context.playStreamEvent) {
+        var ev = context.playStreamEvent;
+        playerId = ev.PlayerId || ev.EntityId || null;
+        if (ev.UserInfo) {
+            displayName = ev.UserInfo.TitleInfo ? ev.UserInfo.TitleInfo.DisplayName : (ev.UserInfo.Username || "");
+            email = ev.UserInfo.PrivateInfo ? ev.UserInfo.PrivateInfo.Email : "";
+        }
+    }
+
+    if (!playerId && args) {
+        playerId = args.playFabId || args.playerId || currentPlayerId;
+        displayName = args.displayName || "";
+        email = args.email || "";
+        avatarUrl = args.avatarUrl || "";
+    }
+
+    if (!playerId) {
+        return { success: false, error: "No PlayerId found in event or args." };
+    }
+
+    // Add to Live Registry group
+    try {
+        server.AddSharedGroupMembers({ SharedGroupId: "AllRegisteredPlayers", PlayFabIds: [playerId] });
+    } catch (e) {
+        try {
+            server.CreateSharedGroup({ SharedGroupId: "AllRegisteredPlayers" });
+            server.AddSharedGroupMembers({ SharedGroupId: "AllRegisteredPlayers", PlayFabIds: [playerId] });
+        } catch (e2) {}
+    }
+
+    // Sync to Firebase
+    var syncRes = _syncPlayerToFirebase(playerId, displayName, email, avatarUrl, { isNewRegistration: true });
+    return { success: true, playFabId: playerId, firebaseSync: syncRes };
+};
+
+handlers.syncPlayerToFirebase = function(args, context) {
+    var pId = (args && args.playFabId) || currentPlayerId;
+    return _syncPlayerToFirebase(
+        pId, 
+        args ? args.displayName : "", 
+        args ? args.email : "", 
+        args ? args.avatarUrl : "", 
+        args ? args.additionalFields : null
+    );
+};
+

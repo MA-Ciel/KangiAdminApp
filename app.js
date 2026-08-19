@@ -100,6 +100,17 @@
     modalNotifInput:    $('modalNotifInput'),
     modalSendNotifBtn:  $('modalSendNotifBtn'),
     modalActionAlert:   $('modalActionAlert'),
+    /* Firebase Configuration */
+    fbDatabaseType:     $('fbDatabaseType'),
+    fbCollectionName:   $('fbCollectionName'),
+    fbProjectId:        $('fbProjectId'),
+    fbApiKey:           $('fbApiKey'),
+    fbAuthDomain:       $('fbAuthDomain'),
+    fbDatabaseUrl:      $('fbDatabaseUrl'),
+    fbJsonConfig:       $('fbJsonConfig'),
+    saveFirebaseBtn:    $('saveFirebaseBtn'),
+    testFirebaseBtn:    $('testFirebaseBtn'),
+    firebaseConfigAlert:$('firebaseConfigAlert'),
     /* Ban Duration Modal (kept for legacy, no longer used for ban flow) */
     banDurationModal:   $('banDurationModal'),
     closeBanModal:      $('closeBanModal'),
@@ -248,6 +259,98 @@
         el.settingsRefreshBtn.textContent = 'Refresh Data';
       });
     }
+
+    /* ── Firebase Config — load saved values on page init ── */
+    const fbTypeInput       = el.fbDatabaseType;
+    const fbCollInput       = el.fbCollectionName;
+    const fbProjectInput    = el.fbProjectId;
+    const fbKeyInput        = el.fbApiKey;
+    const fbAuthInput       = el.fbAuthDomain;
+    const fbDbUrlInput      = el.fbDatabaseUrl;
+    const fbJsonInput       = el.fbJsonConfig;
+    const fbAlert           = el.firebaseConfigAlert;
+
+    const savedFbConfig = KangiService.getFirebaseConfig();
+    if (savedFbConfig) {
+      if (fbTypeInput)    fbTypeInput.value    = savedFbConfig.dbType || 'firestore';
+      if (fbCollInput)    fbCollInput.value    = savedFbConfig.collectionName || 'users';
+      if (fbProjectInput) fbProjectInput.value = savedFbConfig.projectId || '';
+      if (fbKeyInput)     fbKeyInput.value     = savedFbConfig.apiKey || '';
+      if (fbAuthInput)    fbAuthInput.value    = savedFbConfig.authDomain || '';
+      if (fbDbUrlInput)   fbDbUrlInput.value   = savedFbConfig.databaseURL || '';
+      if (fbJsonInput)    fbJsonInput.value    = JSON.stringify(savedFbConfig, null, 2);
+    }
+
+    // Auto-parse when pasting JSON into the JSON config box
+    fbJsonInput?.addEventListener('input', () => {
+      const raw = fbJsonInput.value.trim();
+      if (!raw) return;
+      try {
+        const parsed = JSON.parse(raw);
+        if (parsed.projectId && fbProjectInput) fbProjectInput.value = parsed.projectId;
+        if (parsed.apiKey && fbKeyInput) fbKeyInput.value = parsed.apiKey;
+        if (parsed.authDomain && fbAuthInput) fbAuthInput.value = parsed.authDomain;
+        if (parsed.databaseURL && fbDbUrlInput) {
+          fbDbUrlInput.value = parsed.databaseURL;
+          if (fbTypeInput) fbTypeInput.value = 'rtdb';
+        }
+        if (parsed.collectionName && fbCollInput) fbCollInput.value = parsed.collectionName;
+        if (parsed.dbType && fbTypeInput) fbTypeInput.value = parsed.dbType;
+      } catch (e) {
+        // user still typing JSON
+      }
+    });
+
+    // Save Firebase Config
+    el.saveFirebaseBtn?.addEventListener('click', () => {
+      const config = {
+        dbType:         fbTypeInput?.value || 'firestore',
+        collectionName: (fbCollInput?.value || 'users').trim(),
+        projectId:      fbProjectInput?.value.trim() || '',
+        apiKey:         fbKeyInput?.value.trim() || '',
+        authDomain:     fbAuthInput?.value.trim() || '',
+        databaseURL:    fbDbUrlInput?.value.trim() || ''
+      };
+
+      if (!config.projectId && !config.apiKey) {
+        _alert(fbAlert, 'warning', 'Project ID and API Key are recommended for Firebase connection.');
+      }
+
+      KangiService.saveFirebaseConfig(config);
+      if (fbJsonInput) fbJsonInput.value = JSON.stringify(config, null, 2);
+      _alert(fbAlert, 'success', '✓ Firebase configuration saved.');
+      setTimeout(() => fbAlert?.classList.add('hidden'), 3500);
+    });
+
+    // Test Firebase Connection & Sync
+    el.testFirebaseBtn?.addEventListener('click', async () => {
+      const config = {
+        dbType:         fbTypeInput?.value || 'firestore',
+        collectionName: (fbCollInput?.value || 'users').trim(),
+        projectId:      fbProjectInput?.value.trim() || '',
+        apiKey:         fbKeyInput?.value.trim() || '',
+        authDomain:     fbAuthInput?.value.trim() || '',
+        databaseURL:    fbDbUrlInput?.value.trim() || ''
+      };
+
+      el.testFirebaseBtn.disabled = true;
+      el.testFirebaseBtn.innerHTML = '<span class="btn-loader" style="width:14px;height:14px;border-width:2px;margin-right:6px;"></span>Testing...';
+
+      const res = await KangiService.testFirebaseConnection(config);
+      el.testFirebaseBtn.disabled = false;
+      el.testFirebaseBtn.innerHTML = `
+        <svg viewBox="0 0 20 20" fill="currentColor" style="width:14px;height:14px;"><path fill-rule="evenodd" d="M4 2a1 1 0 011 1v2.101a7.002 7.002 0 0111.601 2.566 1 1 0 11-1.885.666A5.002 5.002 0 005.999 7H9a1 1 0 010 2H4a1 1 0 01-1-1V3a1 1 0 011-1zm.008 9.057a1 1 0 011.276.61A5.002 5.002 0 0014.001 13H11a1 1 0 110-2h5a1 1 0 011 1v5a1 1 0 11-2 0v-2.101a7.002 7.002 0 01-11.601-2.566 1 1 0 01.61-1.276z" clip-rule="evenodd"/></svg>
+        Test Connection & Sync
+      `;
+
+      if (res.success) {
+        KangiService.saveFirebaseConfig(config);
+        _alert(fbAlert, 'success', `✓ ${res.message} Syncing data now...`);
+        await _loadAllData();
+      } else {
+        _alert(fbAlert, 'error', `✕ Connection Failed: ${res.error}`);
+      }
+    });
 
     /* ── Cloudinary config — load saved values on page init ── */
     const cloudNameInput  = $('cloudinaryCloudName');
@@ -1164,98 +1267,53 @@
        2. getExportResult (polled) → returns { status, users } when complete
      ================================================================ */
   async function _fetchAndEnrichUsers() {
-    // --- Step 1: Start the export ---
-    let startRes;
+    let result;
     try {
-      startRes = await KangiService.getAllUsers();
-      console.log('[DWM] getAllUsers (start export) response:', startRes);
+      result = await KangiService.getFirebaseUsers();
+      console.log('[DWM] getFirebaseUsers response:', result);
     } catch (err) {
-      const msg = typeof err === 'string' ? err : (err?.message || 'Failed to start player export.');
-      console.error('[DWM] getAllUsers error:', err);
-      throw new Error(msg);
-    }
-
-    if (!startRes || !startRes.success) {
-      throw new Error((startRes && startRes.error) ||
-        'ExportPlayersInSegment failed — check PlayFabSecretKey in Title Internal Data.');
-    }
-
-    const exportId  = startRes.exportId;
-    const segmentId = startRes.segmentId || '';
-
-    if (!exportId) {
-      throw new Error('No exportId returned from server. Cannot retrieve player list.');
-    }
-
-    // --- Step 2: Poll until complete (max 30 attempts × 2s = up to 60s) ---
-    const MAX_POLLS        = 30;
-    const POLL_INTERVAL_MS = 2000;
-
-    for (let attempt = 1; attempt <= MAX_POLLS; attempt++) {
-      await new Promise(resolve => setTimeout(resolve, POLL_INTERVAL_MS));
-
-      // Update loading message so the admin knows progress
-      const loadMsg = document.getElementById('_usersLoadMsg');
-      if (loadMsg) loadMsg.textContent = `Fetching player profiles… (${attempt}/${MAX_POLLS})`;
-
-      let pollRes;
+      console.warn('[DWM] Firebase user fetch failed, attempting PlayFab live registry fallback:', err);
       try {
-        pollRes = await KangiService.getExportResult(exportId, segmentId);
-        console.log(`[DWM] getExportResult attempt ${attempt}: status=${pollRes?.status} users=${pollRes?.users?.length ?? '—'}`);
-      } catch (err) {
-        const msg = typeof err === 'string' ? err : (err?.message || 'getExportResult failed.');
-        console.error('[DWM] getExportResult error:', err);
+        const pfRes = await KangiService.getAllUsers();
+        if (pfRes && pfRes.status === 'complete' && Array.isArray(pfRes.users)) {
+          result = { source: 'playfab-fallback', users: pfRes.users, isFallback: true };
+        } else {
+          throw err;
+        }
+      } catch (fallbackErr) {
+        const msg = typeof fallbackErr === 'string' ? fallbackErr : (fallbackErr?.message || 'Failed to load players.');
         throw new Error(msg);
       }
-
-      if (!pollRes || !pollRes.success) {
-        throw new Error((pollRes && pollRes.error) || 'getExportResult returned an error.');
-      }
-
-      if (pollRes.status === 'pending') {
-        continue; // still processing — wait and retry
-      }
-
-      if (pollRes.status === 'complete') {
-        const users = Array.isArray(pollRes.users) ? pollRes.users : [];
-        state.allUsers      = users;
-        state.filteredUsers = users;
-
-        // Update Settings indicators
-        const csVerEl = $('settingsCloudscriptVersion');
-        const dsEl    = $('settingsDataSource');
-        if (csVerEl) {
-          csVerEl.textContent = pollRes.version || 'v4.0.0-export';
-          csVerEl.className   = 'badge badge-success';
-        }
-        if (dsEl) {
-          dsEl.textContent = `PlayFab Export — ${users.length} player${users.length !== 1 ? 's' : ''}`;
-        }
-
-        // Enrich with unlocked characters concurrently
-        await Promise.allSettled(
-          users.map(async (user) => {
-            try {
-              const ud = await KangiService.getUserCharacters(user.playFabId);
-              user.unlockedCharacters     = ud.unlockedCharacters || [];
-              user.unlockedCharacterNames = null; // resolved lazily in panel
-            } catch (_) {
-              user.unlockedCharacters     = [];
-              user.unlockedCharacterNames = null;
-            }
-          })
-        );
-
-        return users;
-      }
-
-      throw new Error(`Unexpected export status "${pollRes.status}" from server.`);
     }
 
-    throw new Error(
-      `Player export timed out after ${MAX_POLLS} attempts (${MAX_POLLS * POLL_INTERVAL_MS / 1000}s). ` +
-      'The segment may be large or the export service is slow. Please try again.'
-    );
+    const users = (result && Array.isArray(result.users)) ? result.users : [];
+
+    // Sort by name alphabetically
+    users.sort((a, b) => {
+      const nameA = (_getUserDisplayName(a) || '').toLowerCase();
+      const nameB = (_getUserDisplayName(b) || '').toLowerCase();
+      return nameA.localeCompare(nameB);
+    });
+
+    state.allUsers      = users;
+    state.filteredUsers = users;
+
+    // Update settings indicators
+    const csVerEl = $('settingsCloudscriptVersion');
+    const dsEl    = $('settingsDataSource');
+    if (csVerEl) {
+      csVerEl.textContent = 'Active';
+      csVerEl.className   = 'badge badge-success';
+    }
+    if (dsEl) {
+      if (result.source === 'firebase') {
+        dsEl.textContent = `Firebase (${result.collection || 'users'}) — ${users.length} player${users.length !== 1 ? 's' : ''}`;
+      } else {
+        dsEl.textContent = `PlayFab Live Registry — ${users.length} player${users.length !== 1 ? 's' : ''}`;
+      }
+    }
+
+    return users;
   }
 
   async function _loadUsers() {
@@ -1264,7 +1322,7 @@
     el.usersList.innerHTML = `
       <div class="empty-state">
         <div class="btn-loader" style="width:22px;height:22px;border-width:3px;"></div>
-        <p id="_usersLoadMsg">Starting player export from PlayFab…</p>
+        <p id="_usersLoadMsg">Fetching player list from Firebase…</p>
       </div>`;
 
     try {
@@ -1274,8 +1332,8 @@
       _renderDashboardUsers();
 
       if (el.usersAlert) {
-        _alert(el.usersAlert, 'info', `${users.length} player${users.length !== 1 ? 's' : ''} loaded from PlayFab.`);
-        setTimeout(() => el.usersAlert.classList.add('hidden'), 3000);
+        _alert(el.usersAlert, 'info', `${users.length} player${users.length !== 1 ? 's' : ''} loaded and sorted by name.`);
+        setTimeout(() => el.usersAlert?.classList.add('hidden'), 3000);
       }
     } catch (err) {
       el.usersList.innerHTML = `<div class="empty-state"><p style="color:var(--red);">Failed to load users: ${_esc(String(err))}</p></div>`;
@@ -1331,22 +1389,21 @@
           </span>
           <span>
             <svg viewBox="0 0 20 20" fill="currentColor" style="width:11px;height:11px;opacity:.6;"><path fill-rule="evenodd" d="M4 4a2 2 0 012-2h4.586A2 2 0 0112 2.586L15.414 6A2 2 0 0116 7.414V16a2 2 0 01-2 2H6a2 2 0 01-2-2V4z" clip-rule="evenodd"/></svg>
-            ${_esc(user.playFabId)}
+            ${_esc(user.playFabId || 'No ID')}
           </span>
           ${user.lastLogin ? `<span>
             <svg viewBox="0 0 20 20" fill="currentColor" style="width:11px;height:11px;opacity:.6;"><path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm1-12a1 1 0 10-2 0v4a1 1 0 00.293.707l2.828 2.829a1 1 0 101.415-1.415L11 9.586V6z" clip-rule="evenodd"/></svg>
             Last seen ${new Date(user.lastLogin).toLocaleDateString()}
           </span>` : ''}
         </div>
-        <div class="user-card-characters">
-          <svg viewBox="0 0 20 20" fill="currentColor"><path d="M10 9a3 3 0 100-6 3 3 0 000 6zm-7 9a7 7 0 1114 0H3z"/></svg>
-          <span>${characterCount} character${characterCount !== 1 ? 's' : ''} unlocked</span>
-        </div>
       </div>
       <div class="user-card-actions">
-        <svg viewBox="0 0 20 20" fill="currentColor" style="width:16px;height:16px;color:var(--text-3);flex-shrink:0;">
-          <path fill-rule="evenodd" d="M7.293 14.707a1 1 0 010-1.414L10.586 10 7.293 6.707a1 1 0 011.414-1.414l4 4a1 1 0 010 1.414l-4 4a1 1 0 01-1.414 0z" clip-rule="evenodd"/>
-        </svg>
+        <button class="btn btn-secondary btn-xs btn-view-more" title="View details via PlayFab API">
+          <span>View More</span>
+          <svg viewBox="0 0 20 20" fill="currentColor" style="width:13px;height:13px;margin-left:3px;">
+            <path fill-rule="evenodd" d="M7.293 14.707a1 1 0 010-1.414L10.586 10 7.293 6.707a1 1 0 011.414-1.414l4 4a1 1 0 010 1.414l-4 4a1 1 0 01-1.414 0z" clip-rule="evenodd"/>
+          </svg>
+        </button>
       </div>`;
 
     return card;
@@ -1606,7 +1663,7 @@
     el.modalUnbanBtn.style.display = canUnban ? '' : 'none';
   }
 
-  function _showUserDetails(user) {
+  async function _showUserDetails(user) {
     if (!el.userDetailsModal) return;
     state.selectedUser = user;
 
@@ -1614,7 +1671,7 @@
     el.userDetailsBody.innerHTML = `
       <div class="loading-spinner">
         <div class="btn-loader"></div>
-        <p>Loading...</p>
+        <p>Querying PlayFab API for player internal data…</p>
       </div>`;
 
     if (el.userModalActionsBar) el.userModalActionsBar.style.display = 'none';
@@ -1622,110 +1679,120 @@
 
     const friendlyName  = _getUserDisplayName(user);
     const initial       = friendlyName.charAt(0).toUpperCase();
-    // Resolve lazily here — NFTs are guaranteed loaded by the time panel opens
+
+    // Call PlayFab API on-demand to fetch internal data (unlocked characters, notifications, etc.)
+    let pfDetails = { unlockedCharacters: user.unlockedCharacters || [], notifications: [] };
+    try {
+      if (user.playFabId) {
+        pfDetails = await KangiService.getPlayFabUserDetails(user.playFabId);
+        user.unlockedCharacters = pfDetails.unlockedCharacters || [];
+      }
+    } catch (pfErr) {
+      console.warn('[DWM] PlayFab internal fetch notice:', pfErr);
+    }
+
     const rawIds        = user.unlockedCharacters || [];
     const unlockedNames = rawIds.length > 0 ? _resolveCharacterNames(rawIds) : [];
     const allCharacters = ['Katsumi', 'Kiko', 'Bee', 'Chyna'];
 
-    console.log('[Kangi] Panel open for:', friendlyName, '| rawIds:', rawIds, '| resolved:', unlockedNames);
+    console.log('[Kangi] PlayFab on-demand details for:', friendlyName, '| rawIds:', rawIds, '| resolved:', unlockedNames);
 
-    setTimeout(() => {
-      el.userDetailsBody.innerHTML = `
-        <!-- Hero -->
-        <div class="up-hero">
-          <div class="up-hero-avatar">
-            ${user.avatarUrl ? `<img src="${_esc(user.avatarUrl)}" alt="${_esc(friendlyName)}" />` : initial}
-          </div>
-          <div class="up-hero-info">
-            <h3>${_esc(friendlyName)}</h3>
-            <span class="up-hero-email">${_esc(user.email || 'No email')}</span>
-            <div class="up-hero-badges">
-              ${user.isAdmin  ? '<span class="chip chip--purple">Admin</span>'  : ''}
-              ${user.isBanned ? '<span class="chip chip--red">Banned</span>'    : '<span class="chip chip--green">Active</span>'}
-            </div>
+    el.userDetailsBody.innerHTML = `
+      <!-- Hero -->
+      <div class="up-hero">
+        <div class="up-hero-avatar">
+          ${user.avatarUrl ? `<img src="${_esc(user.avatarUrl)}" alt="${_esc(friendlyName)}" />` : initial}
+        </div>
+        <div class="up-hero-info">
+          <h3>${_esc(friendlyName)}</h3>
+          <span class="up-hero-email">${_esc(user.email || 'No email')}</span>
+          <div class="up-hero-badges">
+            ${user.isAdmin  ? '<span class="chip chip--purple">Admin</span>'  : ''}
+            ${user.isBanned ? '<span class="chip chip--red">Banned</span>'    : '<span class="chip chip--green">Active</span>'}
+            <span class="chip chip--teal" style="font-size:0.65rem;">PlayFab Connected</span>
           </div>
         </div>
+      </div>
 
-        <!-- Account info -->
-        <div class="up-section">
-          <div class="up-section-title">Account Information</div>
-          <div class="up-info-grid">
-            <div class="up-info-item">
-              <span class="up-info-label">Player Name</span>
-              <span class="up-info-value">${_esc(friendlyName)}</span>
-            </div>
-            <div class="up-info-item">
-              <span class="up-info-label">Email</span>
-              <span class="up-info-value">${_esc(user.email || '—')}</span>
-            </div>
-            <div class="up-info-item">
-              <span class="up-info-label">PlayFab ID</span>
-              <span class="up-info-value">${_esc(user.playFabId)}</span>
-            </div>
-            <div class="up-info-item">
-              <span class="up-info-label">Account Status</span>
-              <span class="up-info-value">${user.isBanned ? '🔴 Banned' : '🟢 Active'}</span>
-            </div>
-            <div class="up-info-item">
-              <span class="up-info-label">Joined</span>
-              <span class="up-info-value">${user.created ? new Date(user.created).toLocaleDateString() : '—'}</span>
-            </div>
-            <div class="up-info-item">
-              <span class="up-info-label">Last Login</span>
-              <span class="up-info-value">${user.lastLogin ? new Date(user.lastLogin).toLocaleDateString() : 'Never'}</span>
-            </div>
+      <!-- Account info -->
+      <div class="up-section">
+        <div class="up-section-title">Account Information (PlayFab &amp; Firebase)</div>
+        <div class="up-info-grid">
+          <div class="up-info-item">
+            <span class="up-info-label">Player Name</span>
+            <span class="up-info-value">${_esc(friendlyName)}</span>
+          </div>
+          <div class="up-info-item">
+            <span class="up-info-label">Email</span>
+            <span class="up-info-value">${_esc(user.email || '—')}</span>
+          </div>
+          <div class="up-info-item">
+            <span class="up-info-label">PlayFab ID</span>
+            <span class="up-info-value">${_esc(user.playFabId || '—')}</span>
+          </div>
+          <div class="up-info-item">
+            <span class="up-info-label">Account Status</span>
+            <span class="up-info-value">${user.isBanned ? '🔴 Banned' : '🟢 Active'}</span>
+          </div>
+          <div class="up-info-item">
+            <span class="up-info-label">Joined</span>
+            <span class="up-info-value">${user.created ? new Date(user.created).toLocaleDateString() : '—'}</span>
+          </div>
+          <div class="up-info-item">
+            <span class="up-info-label">Last Login</span>
+            <span class="up-info-value">${user.lastLogin ? new Date(user.lastLogin).toLocaleDateString() : 'Never'}</span>
           </div>
         </div>
+      </div>
 
-        <!-- Characters -->
-        <div class="up-section">
-          <div class="up-section-title">Unlocked Characters (${rawIds.length} / ${allCharacters.length})</div>
-          <div class="up-chars-grid">
-            ${allCharacters.map(char => {
-              // Check by resolved name OR by raw id containing the character name
-              const isUnlocked = unlockedNames.some(n =>
-                n.toLowerCase() === char.toLowerCase() ||
-                n.toLowerCase().startsWith(char.toLowerCase())
-              ) || rawIds.some(id =>
-                String(id).toLowerCase().includes(char.toLowerCase())
-              );
-              // Find matching NFT for image
-              const matchedNft = isUnlocked
-                ? (state.nfts || []).find(n =>
-                    n.name?.toLowerCase().startsWith(char.toLowerCase())
-                  )
-                : null;
-              return `
-                <div class="up-char-card ${isUnlocked ? 'unlocked' : 'locked'}">
-                  ${matchedNft
-                    ? `<img src="${matchedNft.image}" alt="${_esc(char)}" class="up-char-img" />`
-                    : `<span class="up-char-icon">${isUnlocked ? '🔓' : '🔒'}</span>`
-                  }
-                  <div class="up-char-details">
-                    <span class="up-char-name">${_esc(char)}</span>
-                    ${matchedNft ? `<span class="up-char-nft-name">${_esc(matchedNft.name)}</span>` : ''}
-                    <span class="up-char-badge">${isUnlocked ? 'Unlocked' : 'Locked'}</span>
-                  </div>
-                </div>`;
-            }).join('')}
-          </div>
-        </div>`;
+      <!-- Characters -->
+      <div class="up-section">
+        <div class="up-section-title">Unlocked Characters via PlayFab (${rawIds.length} / ${allCharacters.length})</div>
+        <div class="up-chars-grid">
+          ${allCharacters.map(char => {
+            const isUnlocked = unlockedNames.some(n =>
+              n.toLowerCase() === char.toLowerCase() ||
+              n.toLowerCase().startsWith(char.toLowerCase())
+            ) || rawIds.some(id =>
+              String(id).toLowerCase().includes(char.toLowerCase())
+            );
+            const matchedNft = isUnlocked
+              ? (state.nfts || []).find(n =>
+                  n.name?.toLowerCase().startsWith(char.toLowerCase())
+                )
+              : null;
+            return `
+              <div class="up-char-card ${isUnlocked ? 'unlocked' : 'locked'}">
+                ${matchedNft
+                  ? `<img src="${matchedNft.image}" alt="${_esc(char)}" class="up-char-img" />`
+                  : `<span class="up-char-icon">${isUnlocked ? '🔓' : '🔒'}</span>`
+                }
+                <div class="up-char-details">
+                  <span class="up-char-name">${_esc(char)}</span>
+                  ${matchedNft ? `<span class="up-char-nft-name">${_esc(matchedNft.name)}</span>` : ''}
+                  <span class="up-char-badge">${isUnlocked ? 'Unlocked' : 'Locked'}</span>
+                </div>
+              </div>`;
+          }).join('')}
+        </div>
+      </div>`;
 
-      /* Show action footer */
-      if (el.userModalActionsBar) {
-        el.userModalActionsBar.style.display = '';
-        _updateModalButtons(user);
-      }
+    /* Show action footer */
+    if (el.userModalActionsBar) {
+      el.userModalActionsBar.style.display = '';
+      _updateModalButtons(user);
+    }
 
-      /* Load and render the notification list */
-      _loadUserNotifications(user.playFabId);
-    }, 220);
+    /* Load and render the notification list */
+    if (user.playFabId) {
+      _loadUserNotifications(user.playFabId, pfDetails.notifications);
+    }
   }
 
   /* ================================================================
      USER NOTIFICATIONS — fetch and render inside the details modal
      ================================================================ */
-  async function _loadUserNotifications(playFabId) {
+  async function _loadUserNotifications(playFabId, preloadedNotifs) {
     /* Wait for the modal body to be rendered before injecting the section */
     const container = el.userDetailsBody;
     if (!container) return;
@@ -1745,8 +1812,11 @@
     container.appendChild(section);
 
     try {
-      const res = await KangiService.getNotifications(playFabId);
-      const notifications = (res && Array.isArray(res.notifications)) ? res.notifications : [];
+      let notifications = Array.isArray(preloadedNotifs) ? preloadedNotifs : null;
+      if (!notifications) {
+        const res = await KangiService.getNotifications(playFabId);
+        notifications = (res && Array.isArray(res.notifications)) ? res.notifications : [];
+      }
       const notifList = document.getElementById('up-notif-list');
       if (!notifList) return;
 

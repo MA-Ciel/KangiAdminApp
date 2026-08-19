@@ -9,6 +9,10 @@
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet" />
   <script src="https://download.playfab.com/PlayFabClientApi.js"></script>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
+  <!-- Firebase App & Database / Firestore SDKs (v10 compat) -->
+  <script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-app-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-database-compat.js"></script>
   <link rel="stylesheet" href="styles.css" />
 </head>
 <body>
@@ -492,6 +496,73 @@
                   <span class="detail-label">Session Status</span>
                   <span class="badge badge-success">● Connected &amp; Active</span>
                 </div>
+              </div>
+            </div>
+          </div>
+
+          <!-- Firebase Connection & List Source Settings -->
+          <div class="card settings-card">
+            <div class="card-header">
+              <h3 class="card-title">
+                <svg viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M2 5a2 2 0 012-2h12a2 2 0 012 2v10a2 2 0 01-2 2H4a2 2 0 01-2-2V5zm3.293 1.293a1 1 0 011.414 0l3 3a1 1 0 010 1.414l-3 3a1 1 0 01-1.414-1.414L7.586 10 5.293 7.707a1 1 0 010-1.414zM11 12a1 1 0 100 2h3a1 1 0 100-2h-3z" clip-rule="evenodd"/></svg>
+                Firebase Player List Source
+              </h3>
+            </div>
+            <div class="settings-card-body">
+              <p class="setting-desc" style="margin-bottom: 1rem; color: var(--text-2);">
+                Admin fetches player documents from Firebase and renders them sorted by name. Clicking <strong>View More</strong> queries the PlayFab API on-demand for internal profile and character data.
+              </p>
+              
+              <div id="firebaseConfigAlert" class="alert hidden" style="margin-bottom: 1rem;"></div>
+
+              <div class="form-row" style="margin-bottom: 0.85rem;">
+                <div class="field-group" style="flex:1;">
+                  <label for="fbDatabaseType">Database Type</label>
+                  <select id="fbDatabaseType" class="input-select" style="width:100%;">
+                    <option value="firestore">Cloud Firestore (Default)</option>
+                    <option value="rtdb">Realtime Database</option>
+                  </select>
+                </div>
+                <div class="field-group" style="flex:1;">
+                  <label for="fbCollectionName">Collection / Node Path</label>
+                  <input id="fbCollectionName" type="text" placeholder="users" value="users" />
+                </div>
+              </div>
+
+              <div class="field-group" style="margin-bottom: 0.85rem;">
+                <label for="fbProjectId">Project ID</label>
+                <input id="fbProjectId" type="text" placeholder="e.g. dancewithmii-app" />
+              </div>
+
+              <div class="field-group" style="margin-bottom: 0.85rem;">
+                <label for="fbApiKey">API Key</label>
+                <input id="fbApiKey" type="text" placeholder="AIzaSy..." />
+              </div>
+
+              <div class="field-group" style="margin-bottom: 0.85rem;">
+                <label for="fbAuthDomain">Auth Domain <span style="font-size:0.75rem;opacity:0.7;">(optional)</span></label>
+                <input id="fbAuthDomain" type="text" placeholder="project-id.firebaseapp.com" />
+              </div>
+
+              <div class="field-group" style="margin-bottom: 1rem;">
+                <label for="fbDatabaseUrl">Database URL <span style="font-size:0.75rem;opacity:0.7;">(for Realtime DB)</span></label>
+                <input id="fbDatabaseUrl" type="text" placeholder="https://project-id-default-rtdb.firebaseio.com" />
+              </div>
+
+              <div class="field-group" style="margin-bottom: 1.25rem;">
+                <label for="fbJsonConfig">Or Paste Firebase Config JSON</label>
+                <textarea id="fbJsonConfig" rows="3" placeholder='{"apiKey": "...", "projectId": "...", "databaseURL": "..."}' style="width:100%; font-family: monospace; font-size: 0.8rem; resize: vertical;"></textarea>
+              </div>
+
+              <div style="display: flex; gap: 0.75rem; flex-wrap: wrap;">
+                <button id="saveFirebaseBtn" class="btn btn-primary btn-sm">
+                  <svg viewBox="0 0 20 20" fill="currentColor" style="width:14px;height:14px;"><path fill-rule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clip-rule="evenodd"/></svg>
+                  Save Firebase Config
+                </button>
+                <button id="testFirebaseBtn" class="btn btn-secondary btn-sm">
+                  <svg viewBox="0 0 20 20" fill="currentColor" style="width:14px;height:14px;"><path fill-rule="evenodd" d="M4 2a1 1 0 011 1v2.101a7.002 7.002 0 0111.601 2.566 1 1 0 11-1.885.666A5.002 5.002 0 005.999 7H9a1 1 0 010 2H4a1 1 0 01-1-1V3a1 1 0 011-1zm.008 9.057a1 1 0 011.276.61A5.002 5.002 0 0014.001 13H11a1 1 0 110-2h5a1 1 0 011 1v5a1 1 0 11-2 0v-2.101a7.002 7.002 0 01-11.601-2.566 1 1 0 01.61-1.276z" clip-rule="evenodd"/></svg>
+                  Test Connection &amp; Sync
+                </button>
               </div>
             </div>
           </div>

@@ -107,6 +107,8 @@
     fbApiKey:           $('fbApiKey'),
     fbAuthDomain:       $('fbAuthDomain'),
     fbDatabaseUrl:      $('fbDatabaseUrl'),
+    fbAdminEmail:       $('fbAdminEmail'),
+    fbAdminPassword:    $('fbAdminPassword'),
     fbJsonConfig:       $('fbJsonConfig'),
     saveFirebaseBtn:    $('saveFirebaseBtn'),
     testFirebaseBtn:    $('testFirebaseBtn'),
@@ -260,6 +262,14 @@
       });
     }
 
+    /* The JSON box mirrors the config for copy/paste; the admin password must
+       never be rendered into it as plain text. */
+    function _fbConfigForDisplay(cfg) {
+      const shown = { ...cfg };
+      if (shown.adminPassword) shown.adminPassword = '••••••••';
+      return shown;
+    }
+
     /* ── Firebase Config — load saved values on page init ── */
     const fbTypeInput       = el.fbDatabaseType;
     const fbCollInput       = el.fbCollectionName;
@@ -267,6 +277,8 @@
     const fbKeyInput        = el.fbApiKey;
     const fbAuthInput       = el.fbAuthDomain;
     const fbDbUrlInput      = el.fbDatabaseUrl;
+    const fbAdminEmailInput = el.fbAdminEmail;
+    const fbAdminPassInput  = el.fbAdminPassword;
     const fbJsonInput       = el.fbJsonConfig;
     const fbAlert           = el.firebaseConfigAlert;
 
@@ -278,7 +290,9 @@
       if (fbKeyInput)     fbKeyInput.value     = savedFbConfig.apiKey || '';
       if (fbAuthInput)    fbAuthInput.value    = savedFbConfig.authDomain || '';
       if (fbDbUrlInput)   fbDbUrlInput.value   = savedFbConfig.databaseURL || '';
-      if (fbJsonInput)    fbJsonInput.value    = JSON.stringify(savedFbConfig, null, 2);
+      if (fbAdminEmailInput) fbAdminEmailInput.value = savedFbConfig.adminEmail || '';
+      if (fbAdminPassInput)  fbAdminPassInput.value  = savedFbConfig.adminPassword || '';
+      if (fbJsonInput)    fbJsonInput.value    = JSON.stringify(_fbConfigForDisplay(savedFbConfig), null, 2);
     }
 
     // Auto-parse when pasting JSON into the JSON config box
@@ -309,7 +323,9 @@
         projectId:      fbProjectInput?.value.trim() || '',
         apiKey:         fbKeyInput?.value.trim() || '',
         authDomain:     fbAuthInput?.value.trim() || '',
-        databaseURL:    fbDbUrlInput?.value.trim() || ''
+        databaseURL:    fbDbUrlInput?.value.trim() || '',
+        adminEmail:     fbAdminEmailInput?.value.trim() || '',
+        adminPassword:  fbAdminPassInput?.value || ''
       };
 
       if (!config.projectId && !config.apiKey) {
@@ -317,7 +333,7 @@
       }
 
       KangiService.saveFirebaseConfig(config);
-      if (fbJsonInput) fbJsonInput.value = JSON.stringify(config, null, 2);
+      if (fbJsonInput) fbJsonInput.value = JSON.stringify(_fbConfigForDisplay(config), null, 2);
       _alert(fbAlert, 'success', '✓ Firebase configuration saved.');
       setTimeout(() => fbAlert?.classList.add('hidden'), 3500);
     });
@@ -330,7 +346,9 @@
         projectId:      fbProjectInput?.value.trim() || '',
         apiKey:         fbKeyInput?.value.trim() || '',
         authDomain:     fbAuthInput?.value.trim() || '',
-        databaseURL:    fbDbUrlInput?.value.trim() || ''
+        databaseURL:    fbDbUrlInput?.value.trim() || '',
+        adminEmail:     fbAdminEmailInput?.value.trim() || '',
+        adminPassword:  fbAdminPassInput?.value || ''
       };
 
       el.testFirebaseBtn.disabled = true;
@@ -1299,11 +1317,22 @@
     state.filteredUsers = users;
 
     // Update settings indicators
-    const csVerEl = $('settingsCloudscriptVersion');
-    const dsEl    = $('settingsDataSource');
+    const csVerEl    = $('settingsCloudscriptVersion');
+    const dsEl       = $('settingsDataSource');
+    const fbStatusEl = $('settingsFirebaseStatus');
+
     if (csVerEl) {
       csVerEl.textContent = 'Active';
       csVerEl.className   = 'badge badge-success';
+    }
+    if (fbStatusEl) {
+      if (result.source === 'firebase') {
+        fbStatusEl.textContent = `● Connected (dance-withmii · ${result.collection || 'users'})`;
+        fbStatusEl.className   = 'badge badge-success';
+      } else {
+        fbStatusEl.textContent = `● PlayFab Fallback`;
+        fbStatusEl.className   = 'badge badge-teal';
+      }
     }
     if (dsEl) {
       if (result.source === 'firebase') {

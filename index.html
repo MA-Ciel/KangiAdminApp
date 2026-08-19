@@ -12,6 +12,7 @@
   <!-- Firebase App & Database / Firestore SDKs (v10 compat) -->
   <script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-app-compat.js"></script>
   <script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-auth-compat.js"></script>
   <script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-database-compat.js"></script>
   <link rel="stylesheet" href="styles.css" />
 </head>
@@ -489,12 +490,12 @@
                   <span class="detail-value" id="settingsDataSource">Loading...</span>
                 </div>
                 <div class="detail-row">
-                  <span class="detail-label">PlayFab Title ID</span>
-                  <span class="detail-value">182E5E (Dance With Mii! App)</span>
+                  <span class="detail-label">Firebase Connection</span>
+                  <span class="badge badge-success" id="settingsFirebaseStatus">● Connected (dance-withmii)</span>
                 </div>
                 <div class="detail-row">
-                  <span class="detail-label">Firebase Database</span>
-                  <span class="badge badge-success">● Connected (dance-withmii)</span>
+                  <span class="detail-label">PlayFab Title ID</span>
+                  <span class="detail-value">182E5E (Dance With Mii! App)</span>
                 </div>
                 <div class="detail-row">
                   <span class="detail-label">Session Status</span>
@@ -551,6 +552,19 @@
               <div class="field-group" style="margin-bottom: 1rem;">
                 <label for="fbDatabaseUrl">Database URL <span style="font-size:0.75rem;opacity:0.7;">(for Realtime DB)</span></label>
                 <input id="fbDatabaseUrl" type="text" placeholder="https://project-id-default-rtdb.firebaseio.com" />
+              </div>
+
+              <div class="field-group" style="margin-bottom: 0.85rem;">
+                <label for="fbAdminEmail">Admin Sign-In Email</label>
+                <input id="fbAdminEmail" type="email" placeholder="admin@yourdomain.com" autocomplete="username" />
+              </div>
+
+              <div class="field-group" style="margin-bottom: 1rem;">
+                <label for="fbAdminPassword">Admin Sign-In Password</label>
+                <input id="fbAdminPassword" type="password" placeholder="••••••••" autocomplete="current-password" />
+                <span style="font-size:0.75rem;opacity:0.7;display:block;margin-top:0.35rem;">
+                  Firestore rules require a signed-in admin to read player records. Stored in this browser only.
+                </span>
               </div>
 
               <div class="field-group" style="margin-bottom: 1.25rem;">

@@ -1187,13 +1187,64 @@ handlers.testNotificationSystem = function(args, context) {
 // FIREBASE REST SYNC HELPER (Cloud Firestore & Realtime Database)
 // Automatically creates or updates the player's document in Firebase from CloudScript.
 // ====================================================================================
+// Cached for the lifetime of a single CloudScript execution so that a batch
+// sync signs in once rather than once per player.
+var _fbTokenCache = null;
+
+/* Exchange the dedicated service identity's credentials for a Firebase ID
+   token. The credentials live in Title *Internal* Data, which only server-side
+   CloudScript can read -- they are never exposed to a game client.
+
+   Note: this is deliberately NOT a Google service-account JWT. Minting one
+   requires RS256-signing a 2048-bit assertion, and the Legacy CloudScript
+   sandbox exposes no crypto primitives (no require, no Buffer, no subtle) and
+   caps execution time. See the security rules for how this uid is scoped. */
+function _firebaseGetIdToken(apiKey, email, password) {
+    if (_fbTokenCache) return { success: true, idToken: _fbTokenCache };
+
+    if (!email || !password) {
+        return {
+            success: false,
+            error: "Firebase service credentials missing. Set Firebase_SvcEmail and " +
+                   "Firebase_SvcPassword in Title Internal Data."
+        };
+    }
+
+    var signInUrl = "https://identitytoolkit.googleapis.com/v1/accounts:signInWithPassword?key=" +
+                    encodeURIComponent(apiKey);
+    var signInBody = JSON.stringify({ email: email, password: password, returnSecureToken: true });
+
+    var raw;
+    try {
+        raw = http.request(signInUrl, "post", signInBody, "application/json", null);
+    } catch (eSignIn) {
+        return { success: false, error: "Firebase sign-in request failed: " + (eSignIn.message || String(eSignIn)) };
+    }
+
+    var parsed;
+    try {
+        parsed = JSON.parse(raw);
+    } catch (eParse) {
+        return { success: false, error: "Firebase sign-in returned unparseable body: " + String(raw).slice(0, 200) };
+    }
+
+    if (!parsed || !parsed.idToken) {
+        var reason = (parsed && parsed.error && parsed.error.message) ? parsed.error.message : "no idToken in response";
+        return { success: false, error: "Firebase sign-in rejected: " + reason };
+    }
+
+    _fbTokenCache = parsed.idToken;
+    return { success: true, idToken: parsed.idToken };
+}
+
 function _syncPlayerToFirebase(playFabId, displayName, email, avatarUrl, additionalFields) {
     if (!playFabId) return { success: false, error: "No playFabId provided" };
 
     try {
         // Read Title Internal Data settings for Firebase (or fallback to defaults)
         var titleData = server.GetTitleInternalData({
-            Keys: ["Firebase_ProjectId", "Firebase_ApiKey", "Firebase_Collection", "Firebase_DbType", "Firebase_DbUrl"]
+            Keys: ["Firebase_ProjectId", "Firebase_ApiKey", "Firebase_Collection",
+                   "Firebase_DbType", "Firebase_DbUrl", "Firebase_SvcEmail", "Firebase_SvcPassword"]
         });
         var td = (titleData && titleData.Data) ? titleData.Data : {};
 
@@ -1202,6 +1253,17 @@ function _syncPlayerToFirebase(playFabId, displayName, email, avatarUrl, additio
         var collectionName = td["Firebase_Collection"] || "users";
         var dbType         = td["Firebase_DbType"]     || "firestore"; // 'firestore' or 'rtdb'
         var dbUrl          = td["Firebase_DbUrl"]      || "";
+        var svcEmail       = td["Firebase_SvcEmail"]   || "";
+        var svcPassword    = td["Firebase_SvcPassword"] || "";
+
+        // An API key is not authentication. Every write below carries a real
+        // Firebase ID token so the security rules can scope it to one uid.
+        var auth = _firebaseGetIdToken(apiKey, svcEmail, svcPassword);
+        if (!auth.success) {
+            log.error("[FirebaseSync] Auth failed for player " + playFabId + ": " + auth.error);
+            return { success: false, error: auth.error };
+        }
+        var authHeaders = { "Authorization": "Bearer " + auth.idToken };
 
         var nowIso = new Date().toISOString();
         var safeName = displayName || "";
@@ -1228,9 +1290,10 @@ function _syncPlayerToFirebase(playFabId, displayName, email, avatarUrl, additio
 
         if (dbType === "rtdb") {
             // Realtime Database REST API: PATCH /users/{playFabId}.json
+            // RTDB takes the ID token in ?auth= (it accepts Firebase ID tokens there).
             var rtdbUrl = dbUrl || ("https://" + projectId + "-default-rtdb.firebaseio.com");
-            var rtdbEndpoint = rtdbUrl + "/" + encodeURIComponent(collectionName) + "/" + encodeURIComponent(playFabId) + ".json";
-            if (apiKey) rtdbEndpoint += "?auth=" + encodeURIComponent(apiKey);
+            var rtdbEndpoint = rtdbUrl + "/" + encodeURIComponent(collectionName) + "/" +
+                               encodeURIComponent(playFabId) + ".json?auth=" + encodeURIComponent(auth.idToken);
 
             var rtdbPayload = {
                 playFabId:   playFabId,
@@ -1245,15 +1308,28 @@ function _syncPlayerToFirebase(playFabId, displayName, email, avatarUrl, additio
                 }
             }
 
-            var rtdbRes = http.request(rtdbEndpoint, "patch", JSON.stringify(rtdbPayload), "application/json", null);
+            var rtdbRes;
+            try {
+                rtdbRes = http.request(rtdbEndpoint, "patch", JSON.stringify(rtdbPayload), "application/json", null);
+            } catch (eRtdb) {
+                log.error("[FirebaseSync] RTDB write failed for " + playFabId + ": " + (eRtdb.message || String(eRtdb)));
+                return { success: false, dbType: "rtdb", error: "RTDB write failed: " + (eRtdb.message || String(eRtdb)) };
+            }
+
+            // A successful PATCH echoes the written object back. Anything else
+            // (notably an {"error": ...} body) means the write did not land.
+            var rtdbParsed = null;
+            try { rtdbParsed = JSON.parse(rtdbRes); } catch (eRp) {}
+            if (rtdbParsed && rtdbParsed.error) {
+                log.error("[FirebaseSync] RTDB rejected write for " + playFabId + ": " + rtdbParsed.error);
+                return { success: false, dbType: "rtdb", error: "RTDB rejected write: " + rtdbParsed.error };
+            }
+
             return { success: true, dbType: "rtdb", response: rtdbRes };
         } else {
             // Cloud Firestore REST API: PATCH /projects/{projectId}/databases/(default)/documents/{collection}/{playFabId}
             var firestoreEndpoint = "https://firestore.googleapis.com/v1/projects/" + encodeURIComponent(projectId) +
                                     "/databases/(default)/documents/" + encodeURIComponent(collectionName) + "/" + encodeURIComponent(playFabId);
-            if (apiKey) {
-                firestoreEndpoint += "?key=" + encodeURIComponent(apiKey);
-            }
 
             var fields = {
                 playFabId:   { stringValue: String(playFabId) },
@@ -1266,9 +1342,38 @@ function _syncPlayerToFirebase(playFabId, displayName, email, avatarUrl, additio
                 fields.createdAt = { stringValue: nowIso };
             }
 
+            // Without an explicit updateMask a PATCH replaces the whole document,
+            // which would wipe createdAt on every subsequent login.
+            var maskQuery = "";
+            for (var f in fields) {
+                if (fields.hasOwnProperty(f)) {
+                    maskQuery += (maskQuery ? "&" : "?") + "updateMask.fieldPaths=" + encodeURIComponent(f);
+                }
+            }
+            firestoreEndpoint += maskQuery;
+
             var firestorePayload = { fields: fields };
-            var fsRes = http.request(firestoreEndpoint, "patch", JSON.stringify(firestorePayload), "application/json", null);
-            return { success: true, dbType: "firestore", response: fsRes };
+            var fsRes;
+            try {
+                fsRes = http.request(firestoreEndpoint, "patch", JSON.stringify(firestorePayload), "application/json", authHeaders);
+            } catch (eFs) {
+                log.error("[FirebaseSync] Firestore write failed for " + playFabId + ": " + (eFs.message || String(eFs)));
+                return { success: false, dbType: "firestore", error: "Firestore write failed: " + (eFs.message || String(eFs)) };
+            }
+
+            // Firestore echoes the written document, including its resource name.
+            // No name means the write did not land, whatever the status code was.
+            var fsParsed = null;
+            try { fsParsed = JSON.parse(fsRes); } catch (eFp) {}
+            if (!fsParsed || !fsParsed.name) {
+                var fsReason = (fsParsed && fsParsed.error && fsParsed.error.message)
+                    ? fsParsed.error.message
+                    : String(fsRes).slice(0, 200);
+                log.error("[FirebaseSync] Firestore rejected write for " + playFabId + ": " + fsReason);
+                return { success: false, dbType: "firestore", error: "Firestore rejected write: " + fsReason };
+            }
+
+            return { success: true, dbType: "firestore", document: fsParsed.name };
         }
     } catch (err) {
         log.error("[FirebaseSync] Error syncing player " + playFabId + ": " + (err.message || JSON.stringify(err)));

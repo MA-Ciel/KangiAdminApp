@@ -504,7 +504,9 @@ const KangiService = (function () {
     appId:             "1:227901605532:web:a01759182a1d1546db4f59",
     measurementId:     "G-ZPTK46HEBC",
     dbType:            "firestore",
-    collectionName:    "users"
+    collectionName:    "users",
+    adminEmail:        "",
+    adminPassword:     ""
   };
 
   /* Default or saved Firebase Config */
@@ -531,6 +533,13 @@ const KangiService = (function () {
         return true;
       }
       localStorage.setItem(FIREBASE_CONFIG_KEY, JSON.stringify(config));
+      // Drop any cached session so edited credentials take effect immediately.
+      _adminAuthPromise = null;
+      try {
+        if (typeof firebase !== 'undefined' && firebase.auth && firebase.auth().currentUser) {
+          firebase.auth().signOut();
+        }
+      } catch (eSignOut) {}
       // Re-init if SDK available
       initFirebase(config);
       return true;
@@ -573,6 +582,38 @@ const KangiService = (function () {
     }
   }
 
+  /* Sign in to Firebase Auth as the admin.
+
+     Firestore rules scope the players collection to known uids, so an
+     unauthenticated read is rejected. Resolves to the signed-in user, or throws
+     with a message the settings panel can surface. */
+  let _adminAuthPromise = null;
+  async function ensureFirebaseAuth(config) {
+    const cfg = config || getFirebaseConfig();
+    if (typeof firebase === 'undefined' || !firebase.auth) {
+      throw new Error('Firebase Auth SDK is not loaded.');
+    }
+
+    const current = firebase.auth().currentUser;
+    if (current) return current;
+
+    if (!cfg.adminEmail || !cfg.adminPassword) {
+      throw new Error('Firebase admin sign-in is not configured. Add the admin email and password in Settings.');
+    }
+
+    // Collapse concurrent callers onto one sign-in round trip.
+    if (!_adminAuthPromise) {
+      _adminAuthPromise = firebase.auth()
+        .signInWithEmailAndPassword(cfg.adminEmail, cfg.adminPassword)
+        .then(cred => cred.user)
+        .catch(err => {
+          _adminAuthPromise = null;
+          throw new Error('Firebase admin sign-in failed: ' + (err.message || err.code || 'unknown error'));
+        });
+    }
+    return _adminAuthPromise;
+  }
+
   /* Test connection to Firebase */
   async function testFirebaseConnection(config) {
     const app = initFirebase(config);
@@ -588,6 +629,8 @@ const KangiService = (function () {
     const collectionName = (cfg.collectionName || 'users').trim();
 
     try {
+      await ensureFirebaseAuth(cfg);
+
       if (dbType === 'rtdb') {
         if (!cfg.databaseURL) {
           return { success: false, error: 'Realtime Database requires a Database URL (e.g. https://<project>.firebaseio.com).' };
@@ -627,6 +670,8 @@ const KangiService = (function () {
     if (!app && typeof firebase === 'undefined') {
       throw new Error('Firebase SDK is not loaded.');
     }
+
+    await ensureFirebaseAuth(cfg);
 
     const dbType = cfg.dbType || 'firestore';
     const collectionName = (cfg.collectionName || 'users').trim();
@@ -766,6 +811,7 @@ const KangiService = (function () {
     saveFirebaseConfig,
     initFirebase,
     testFirebaseConnection,
+    ensureFirebaseAuth,
     getFirebaseUsers,
     getPlayFabUserDetails
   };

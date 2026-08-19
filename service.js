@@ -183,6 +183,19 @@ const KangiService = (function () {
   /* Approve a pending song */
   function approveSong(songId) { return _callVideoScript('approveSong', { adminData: { songId } }); }
 
+  /* Update which modes a song appears in, and its trim window (seconds).
+     trimEnd of 0 means play to the natural end of the file. */
+  function updateSongSettings(songId, modes, trimStart, trimEnd) {
+    return _callVideoScript('updateSongSettings', {
+      adminData: {
+        songId:    songId,
+        modes:     Array.isArray(modes) ? modes : [],
+        trimStart: Number(trimStart) || 0,
+        trimEnd:   Number(trimEnd)   || 0
+      }
+    });
+  }
+
   /* Delete a song from server catalog */
   function deleteSong(songId) { return _callVideoScript('deleteSong', { adminData: { songId } }); }
 
@@ -796,6 +809,7 @@ const KangiService = (function () {
     getSongs,
     approveSong,
     deleteSong,
+    updateSongSettings,
     makeAdmin,
     revokeAdmin,
     registerUser,

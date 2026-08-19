@@ -74,6 +74,15 @@ handlers.videoAppWorkflow = function (args, context) {
         var newSongObj = args.songData;
         newSongObj.isPending = true;
 
+        // Mode defaults: every song is playable in Mirror Mii and Kawaii Mode.
+        // Dance Challenge is opt-in, because it needs a trimmed countdown window.
+        if (!newSongObj.modes || !newSongObj.modes.length) {
+            newSongObj.modes = ["mirror_mii", "kawaii_mode"];
+        }
+        // 0 / 0 means "play the whole file" until an admin trims it.
+        if (typeof newSongObj.trimStart !== "number") newSongObj.trimStart = 0;
+        if (typeof newSongObj.trimEnd   !== "number") newSongObj.trimEnd   = 0;
+
         // Always stamp the uploader's PlayFab ID server-side — never trust the client
         newSongObj.uploaderId = currentPlayerId;
 
@@ -242,6 +251,98 @@ handlers.videoAppWorkflow = function (args, context) {
     var adminParams = args.adminData || {};
 
     // F. APPROVE A PENDING SONG + send notification
+    // ====================================================================================
+    // UPDATE SONG SETTINGS — which game modes a song appears in, and its trim window.
+    //
+    // Trim is stored, never applied to the file. The uploaded audio is left
+    // untouched and the client plays only [trimStart, trimEnd). That keeps the
+    // edit reversible, avoids re-encoding, and costs no storage.
+    // ====================================================================================
+    if (action === "updateSongSettings") {
+        var uParams   = adminParams || args;
+        var uSongId   = uParams.songId;
+        if (!uSongId) return { success: false, error: "songId is required." };
+
+        var ALLOWED_MODES = ["dance_challenge", "mirror_mii", "kawaii_mode"];
+
+        // Keep only recognised mode keys, and drop duplicates.
+        var cleanModes = [];
+        if (uParams.modes && uParams.modes.length) {
+            for (var mi = 0; mi < uParams.modes.length; mi++) {
+                var mk = String(uParams.modes[mi]);
+                var known = false;
+                for (var ai = 0; ai < ALLOWED_MODES.length; ai++) {
+                    if (ALLOWED_MODES[ai] === mk) { known = true; break; }
+                }
+                var dupe = false;
+                for (var ci = 0; ci < cleanModes.length; ci++) {
+                    if (cleanModes[ci] === mk) { dupe = true; break; }
+                }
+                if (known && !dupe) cleanModes.push(mk);
+            }
+        }
+
+        var tStart = Number(uParams.trimStart);
+        var tEnd   = Number(uParams.trimEnd);
+        if (isNaN(tStart) || tStart < 0) tStart = 0;
+        // 0 means "play to the natural end of the file".
+        if (isNaN(tEnd) || tEnd < 0) tEnd = 0;
+        if (tEnd > 0 && tEnd <= tStart) {
+            return { success: false, error: "Trim end must be greater than trim start." };
+        }
+
+        var uResp = server.GetTitleInternalData({ Keys: [SONGS_DATABASE_KEY] });
+        if (!uResp.Data || !uResp.Data[SONGS_DATABASE_KEY]) {
+            return { success: false, error: "Songs catalog empty" };
+        }
+
+        var uWrapper = JSON.parse(uResp.Data[SONGS_DATABASE_KEY]);
+        var uSongs = [];
+        if (Array.isArray(uWrapper)) {
+            uSongs = uWrapper;
+        } else if (uWrapper.songs) {
+            uSongs = uWrapper.songs;
+        } else {
+            uSongs = [];
+            if (uWrapper.approvedSongs) uSongs = uSongs.concat(uWrapper.approvedSongs);
+            if (uWrapper.pendingSongs)  uSongs = uSongs.concat(uWrapper.pendingSongs);
+        }
+
+        var uFound = false;
+        var uApproved = [];
+        var uPending  = [];
+
+        for (var ui = 0; ui < uSongs.length; ui++) {
+            if (uSongs[ui].SongId === uSongId) {
+                uSongs[ui].modes     = cleanModes;
+                uSongs[ui].trimStart = tStart;
+                uSongs[ui].trimEnd   = tEnd;
+                uFound = true;
+            }
+            if (uSongs[ui].isPending === true || uSongs[ui].isPending === "true") {
+                uPending.push(uSongs[ui]);
+            } else {
+                uApproved.push(uSongs[ui]);
+            }
+        }
+
+        if (!uFound) return { success: false, error: "Song not found: " + uSongId };
+
+        server.SetTitleInternalData({
+            Key:   SONGS_DATABASE_KEY,
+            Value: JSON.stringify({ songs: uSongs, approvedSongs: uApproved, pendingSongs: uPending })
+        });
+
+        return {
+            success:   true,
+            message:   "Song settings updated.",
+            songId:    uSongId,
+            modes:     cleanModes,
+            trimStart: tStart,
+            trimEnd:   tEnd
+        };
+    }
+
     if (action === "approveSong") {
         var targetSongId = adminParams.songId;
         log.info("=== APPROVE SONG START ===");

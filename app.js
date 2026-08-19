@@ -1010,6 +1010,20 @@
       const cover = song.CoverUrl || song.cover || "";
       const songUrl = song.SongUrl || song.songLink || song.url || song.musicUrl || "";
 
+      const modes     = Array.isArray(song.modes) ? song.modes : [];
+      const trimStart = Number(song.trimStart) || 0;
+      const trimEnd   = Number(song.trimEnd)   || 0;
+      const trimLen   = trimEnd > trimStart ? (trimEnd - trimStart) : 0;
+
+      const modeDefs = [
+        { key: 'dance_challenge', label: 'Dance Challenge' },
+        { key: 'mirror_mii',      label: 'Mirror Mii!' },
+        { key: 'kawaii_mode',     label: 'Kawaii Mode' }
+      ];
+
+      const entry = document.createElement('div');
+      entry.className = 'song-entry';
+
       const row = document.createElement('div');
       row.className = 'song-item';
       row.innerHTML = `
@@ -1023,11 +1037,18 @@
         <div class="song-meta">
           <span class="song-title-text">${_esc(title)}</span>
           <span class="song-artist-text">${_esc(artist)}</span>
-          <div style="margin-top:0.35rem;">
+          <div style="margin-top:0.35rem;display:flex;gap:0.3rem;flex-wrap:wrap;align-items:center;">
             <span class="chip ${isPending ? 'chip--red' : 'chip--green'}">${isPending ? 'Pending' : 'Available'}</span>
+            ${modes.length
+              ? modes.map(m => {
+                  const d = modeDefs.find(x => x.key === m);
+                  return `<span class="chip chip--teal">${_esc(d ? d.label : m)}</span>`;
+                }).join('')
+              : `<span class="chip chip--red">No modes</span>`}
+            ${trimLen > 0 ? `<span class="chip chip--teal">Trim ${trimLen.toFixed(1)}s</span>` : ''}
           </div>
         </div>
-        
+
         ${songUrl ? `
           <button class="song-preview-btn" data-action="preview" data-url="${_esc(songUrl)}" title="Preview song">
             <svg viewBox="0 0 20 20" fill="currentColor" style="width:16px;height:16px;"><path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zM9.555 7.168A1 1 0 008 8v4a1 1 0 001.555.832l3-2a1 1 0 000-1.664l-3-2z" clip-rule="evenodd"/></svg>
@@ -1038,11 +1059,49 @@
           ${isPending ? `
             <button class="btn btn-primary btn-sm" data-action="approve" data-id="${songId}">Approve</button>
           ` : ''}
+          <button class="btn btn-secondary btn-sm" data-action="toggle-settings" data-id="${songId}">Edit</button>
           <button class="btn btn-danger btn-sm" data-action="delete" data-id="${songId}">Delete</button>
         </div>
       `;
 
-      el.soundsLibrary.appendChild(row);
+      const panel = document.createElement('div');
+      panel.className = 'song-settings hidden';
+      panel.dataset.settingsFor = songId;
+      panel.innerHTML = `
+        <div class="song-settings-group">
+          <span class="song-settings-label">Available in</span>
+          <div class="song-mode-row">
+            ${modeDefs.map(d => `
+              <label class="song-mode-check">
+                <input type="checkbox" data-mode="${d.key}" ${modes.indexOf(d.key) !== -1 ? 'checked' : ''} />
+                <span>${d.label}</span>
+              </label>
+            `).join('')}
+          </div>
+        </div>
+
+        <div class="song-settings-group">
+          <span class="song-settings-label">Trim window &mdash; seconds into the original file</span>
+          <div class="song-trim-row">
+            <label>Start <input type="number" class="song-trim-start" min="0" step="0.1" value="${trimStart}" /></label>
+            <label>End <input type="number" class="song-trim-end" min="0" step="0.1" value="${trimEnd}" /></label>
+            <span class="song-trim-len">${trimLen > 0 ? trimLen.toFixed(1) + 's clip' : 'full track'}</span>
+          </div>
+          <span class="song-settings-hint">End of 0 plays to the natural end of the file. The upload itself is never modified.</span>
+        </div>
+
+        <div class="song-settings-actions">
+          ${songUrl ? `
+            <a class="btn btn-secondary btn-sm" href="${_esc(songUrl)}" download target="_blank" rel="noopener">Download original</a>
+            <button class="btn btn-secondary btn-sm" data-action="preview-trim" data-id="${songId}" data-url="${_esc(songUrl)}">Play trimmed</button>
+          ` : ''}
+          <button class="btn btn-primary btn-sm" data-action="save-settings" data-id="${songId}">Save settings</button>
+        </div>
+      `;
+
+      entry.appendChild(row);
+      entry.appendChild(panel);
+      el.soundsLibrary.appendChild(entry);
     });
   }
 
@@ -1052,6 +1111,92 @@
     if (!btn) return;
     const action = btn.dataset.action;
     const songId = btn.dataset.id;
+
+    if (action === 'toggle-settings') {
+      const panel = el.soundsLibrary.querySelector(`.song-settings[data-settings-for="${songId}"]`);
+      if (panel) panel.classList.toggle('hidden');
+      return;
+    }
+
+    if (action === 'preview-trim') {
+      const panel = el.soundsLibrary.querySelector(`.song-settings[data-settings-for="${songId}"]`);
+      const url   = btn.dataset.url;
+      if (!url || !panel) return;
+
+      const start = Number(panel.querySelector('.song-trim-start').value) || 0;
+      const end   = Number(panel.querySelector('.song-trim-end').value)   || 0;
+      if (end > 0 && end <= start) {
+        _alert(el.soundsAlert, 'warning', 'Trim end must be greater than trim start.');
+        return;
+      }
+
+      let aud = document.getElementById('song-preview-player');
+      if (!aud) {
+        aud = document.createElement('audio');
+        aud.id = 'song-preview-player';
+        document.body.appendChild(aud);
+      }
+      // Drop any stop-watcher left over from a previous trimmed preview.
+      if (aud._trimWatcher) {
+        aud.removeEventListener('timeupdate', aud._trimWatcher);
+        aud._trimWatcher = null;
+      }
+
+      aud.src = url;
+      aud.currentTime = start;
+
+      if (end > start) {
+        aud._trimWatcher = () => {
+          if (aud.currentTime >= end) {
+            aud.pause();
+            aud.removeEventListener('timeupdate', aud._trimWatcher);
+            aud._trimWatcher = null;
+          }
+        };
+        aud.addEventListener('timeupdate', aud._trimWatcher);
+      }
+
+      aud.play()
+        .then(() => _alert(el.soundsAlert, 'info',
+          end > start
+            ? `Playing ${start}s to ${end}s (${(end - start).toFixed(1)}s clip).`
+            : `Playing from ${start}s to the end.`))
+        .catch(() => _alert(el.soundsAlert, 'error', 'Could not play audio. Check the file URL.'));
+      return;
+    }
+
+    if (action === 'save-settings') {
+      const panel = el.soundsLibrary.querySelector(`.song-settings[data-settings-for="${songId}"]`);
+      if (!panel) return;
+
+      const modes = [...panel.querySelectorAll('input[data-mode]')]
+        .filter(c => c.checked)
+        .map(c => c.dataset.mode);
+      const start = Number(panel.querySelector('.song-trim-start').value) || 0;
+      const end   = Number(panel.querySelector('.song-trim-end').value)   || 0;
+
+      if (end > 0 && end <= start) {
+        _alert(el.soundsAlert, 'warning', 'Trim end must be greater than trim start.');
+        return;
+      }
+
+      btn.disabled = true;
+      const originalText = btn.textContent;
+      btn.textContent = 'Saving...';
+      try {
+        const res = await KangiService.updateSongSettings(songId, modes, start, end);
+        if (res && res.success) {
+          _alert(el.soundsAlert, 'success', '✓ Song settings saved.');
+          await _loadSongsData();
+        } else {
+          _alert(el.soundsAlert, 'error', (res && res.error) || 'Could not save song settings.');
+        }
+      } finally {
+        btn.disabled = false;
+        btn.textContent = originalText;
+      }
+      return;
+    }
 
     if (action === 'preview') {
       const url = btn.dataset.url;

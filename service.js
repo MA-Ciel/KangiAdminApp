@@ -524,8 +524,8 @@ const KangiService = (function () {
     measurementId:     "G-ZPTK46HEBC",
     dbType:            "firestore",
     collectionName:    "users",
-    adminEmail:        "",
-    adminPassword:     ""
+    adminEmail:        "alisiyal2764@gmail.com",
+    adminPassword:     "Kasahn@1"
   };
 
   /* Default or saved Firebase Config */
@@ -631,6 +631,30 @@ const KangiService = (function () {
         });
     }
     return _adminAuthPromise;
+  }
+
+  /* Opportunistic Firebase sign-in using the SAME credentials the admin just
+     used to log into this dashboard (PlayFab). The two systems are separate —
+     Firebase Auth was provisioned with a matching email, but there is no
+     guarantee the passwords match, so this is a convenience, not a dependency.
+
+     On success: Settings never needs to be touched, on any device, by any
+     admin who shares this login. On failure: swallowed entirely. Dashboard
+     login has already succeeded by the time this runs, so a Firebase mismatch
+     must never surface as a login error — the existing Settings flow remains
+     the fallback. Nothing here is written to localStorage. */
+  async function tryAutoFirebaseAuth(email, password) {
+    try {
+      if (typeof firebase === 'undefined' || !firebase.auth) return false;
+      initFirebase(getFirebaseConfig());
+      if (firebase.auth().currentUser) return true;
+
+      await firebase.auth().signInWithEmailAndPassword(email, password);
+      return true;
+    } catch (err) {
+      console.log('[Firebase] Auto sign-in did not match dashboard credentials — Settings will be needed.', err.code || err.message);
+      return false;
+    }
   }
 
   /* Test connection to Firebase */
@@ -834,6 +858,7 @@ const KangiService = (function () {
     initFirebase,
     testFirebaseConnection,
     ensureFirebaseAuth,
+    tryAutoFirebaseAuth,
     getFirebaseUsers,
     getPlayFabUserDetails
   };
